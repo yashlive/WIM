@@ -312,9 +312,8 @@ DEFAULT_SITES = [
     {"id": "builtin-parsa",      "name": "Parsa",           "lat": 22.824950, "lon": 82.804340, "builtin": True},
     {"id": "builtin-talabira",   "name": "Talabira",       "lat": 21.756317, "lon": 83.970446, "builtin": True},
     {"id": "builtin-gare-pelma", "name": "Gare Pelma",     "lat": 22.185835, "lon": 83.496813, "builtin": True},
-    {"id": "builtin-kurmitra",   "name": "Kurmitra",       "lat": 21.754655, "lon": 85.161185, "builtin": True},
+    {"id": "builtin-kurmitar",   "name": "Kurmitar",       "lat": 21.754655, "lon": 85.161185, "builtin": True},
 ]
-
 IST       = pytz.timezone('Asia/Kolkata')
 UTC       = pytz.utc
 TIMEOUT   = 20
