@@ -302,7 +302,9 @@ st.markdown(_CSS, unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════
 ACCUWEATHER_KEY = st.secrets.get("ACCUWEATHER_KEY", os.getenv("ACCUWEATHER_KEY", ""))
 OPENWEATHER_KEY = st.secrets.get("OPENWEATHER_KEY", os.getenv("OPENWEATHER_KEY", ""))
-TOMORROWIO_KEY  = st.secrets.get("TOMORROWIO_KEY", os.getenv("TOMORROWIO_KEY", ""))
+TOMORROWIO_KEY  = st.secrets.get("TOMORROWIO_KEY", os.getenv("TOMORROWIO_KEY", ""))git add WFS.py
+git commit -m "Use st.secrets for API keys"
+git push
 ACCUWEATHER_KEY = os.getenv("ACCUWEATHER_API_KEY", "")
 OPENWEATHER_KEY = os.getenv("OPENWEATHER_API_KEY", "")
 TOMORROWIO_KEY  = os.getenv("TOMORROW_API_KEY", "")
