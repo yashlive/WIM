@@ -1,0 +1,155 @@
+
+📍 Suliyari Coal Mine - Weather Forecast for Friday, 16 May 2025
+=== Today's Weather Forecast ===
+Weather: Mostly sunny
+Max Temp: 40.8°C
+Min Temp: 24.9°C
+
+--- Precipitation Info ---
+Rain Probability: 0%
+Precipitation Expected: No
+Rain Alert: No rain expected
+Rain Impact: None
+✅ Production will not be impacted.
+
+--- Additional Info ---
+Wind Speed: 3.84 km/h
+Visibility: 10.0 km
+
+📍 Suliyari Coal Mine - Forecast for Saturday, 17 May 2025
+=== Tomorrow's Weather Forecast ===
+Max Temp: 40.8°C
+Min Temp: 24.9°C
+
+--- Precipitation Info ---
+Rain Probability: 3%
+Precipitation Expected: No
+Rain Alert: No rain expected
+Rain Impact: None
+✅ Production will not be impacted.
+
+-----------------------------------------------
+
+📍 PKEB - Weather Forecast for Friday, 16 May 2025
+=== Today's Weather Forecast ===
+Weather: Partly sunny
+Max Temp: 39.1°C
+Min Temp: 24.3°C
+
+--- Precipitation Info ---
+Rain Probability: 0%
+Precipitation Expected: No
+Rain Alert: No rain expected
+Rain Impact: None
+✅ Production will not be impacted.
+
+--- Additional Info ---
+Wind Speed: 2.02 km/h
+Visibility: 10.0 km
+
+📍 PKEB - Forecast for Saturday, 17 May 2025
+=== Tomorrow's Weather Forecast ===
+Max Temp: 39.1°C
+Min Temp: 24.3°C
+
+--- Precipitation Info ---
+Rain Probability: 4%
+Precipitation Expected: No
+Rain Alert: No rain expected
+Rain Impact: None
+✅ Production will not be impacted.
+
+-----------------------------------------------
+
+📍 Talabira Coal Mine - Weather Forecast for Friday, 16 May 2025
+=== Today's Weather Forecast ===
+Weather: Hazy sunshine
+Max Temp: 42.9°C
+Min Temp: 25.7°C
+
+--- Precipitation Info ---
+Rain Probability: 51%
+Precipitation Expected: Yes
+Rain Alert: Likely around 22:00
+Rain Impact: Medium
+💧 Production may be impacted.
+
+--- Additional Info ---
+Wind Speed: 3.23 km/h
+Visibility: 10.0 km
+
+📍 Talabira Coal Mine - Forecast for Saturday, 17 May 2025
+=== Tomorrow's Weather Forecast ===
+Max Temp: 42.9°C
+Min Temp: 25.7°C
+
+--- Precipitation Info ---
+Rain Probability: 9%
+Precipitation Expected: No
+Rain Alert: No rain expected
+Rain Impact: None
+✅ Production will not be impacted.
+
+-----------------------------------------------
+
+📍 GPIII Coal Mines - Weather Forecast for Friday, 16 May 2025
+=== Today's Weather Forecast ===
+Weather: Mostly cloudy w/ showers
+Max Temp: 42.4°C
+Min Temp: 24.8°C
+
+--- Precipitation Info ---
+Rain Probability: 52%
+Precipitation Expected: Yes
+Rain Alert: Likely around 18:00
+Rain Impact: Medium
+💧 Production may be impacted.
+
+--- Additional Info ---
+Wind Speed: 3.98 km/h
+Visibility: 10.0 km
+
+📍 GPIII Coal Mines - Forecast for Saturday, 17 May 2025
+=== Tomorrow's Weather Forecast ===
+Max Temp: 42.4°C
+Min Temp: 24.8°C
+
+--- Precipitation Info ---
+Rain Probability: 61%
+Precipitation Expected: Yes
+Rain Alert: Rain possible
+Rain Impact: Medium
+💧 Production may be impacted.
+
+-----------------------------------------------
+
+📍 Kurmitar Iron Ore Mine - Weather Forecast for Friday, 16 May 2025
+=== Today's Weather Forecast ===
+Weather: Cloudy
+Max Temp: 36.2°C
+Min Temp: 22.3°C
+
+--- Precipitation Info ---
+Rain Probability: 18%
+Precipitation Expected: No
+Rain Alert: No rain expected
+Rain Impact: None
+✅ Production will not be impacted.
+
+--- Additional Info ---
+Wind Speed: 2.5 km/h
+Visibility: 10.0 km
+
+📍 Kurmitar Iron Ore Mine - Forecast for Saturday, 17 May 2025
+=== Tomorrow's Weather Forecast ===
+Max Temp: 36.2°C
+Min Temp: 22.3°C
+
+--- Precipitation Info ---
+Rain Probability: 55%
+Precipitation Expected: Yes
+Rain Alert: Rain possible
+Rain Impact: Medium
+💧 Production may be impacted.
+
+-----------------------------------------------

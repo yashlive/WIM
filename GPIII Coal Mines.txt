@@ -1,0 +1,30 @@
+📍 GPIII Coal Mines - Weather Forecast for Saturday, 17 May 2025
+=== Today's Weather Forecast ===
+Weather: Partly cloudy
+Max Temp: 42.6°C
+Min Temp: 26.1°C
+
+--- Precipitation Info ---
+Rain Probability: 2%
+Precipitation Expected: No
+Rain Alert: No rain expected
+Rain Impact: None
+✅ Production will not be impacted.
+
+--- Additional Info ---
+Wind Speed: 4.66 km/h
+Visibility: 10.0 km
+
+📍 GPIII Coal Mines - Forecast for Sunday, 18 May 2025
+=== Tomorrow's Weather Forecast ===
+Max Temp: 42.6°C
+Min Temp: 26.1°C
+
+--- Precipitation Info ---
+Rain Probability: 5%
+Precipitation Expected: No
+Rain Alert: No rain expected
+Rain Impact: None
+✅ Production will not be impacted.
+
+-----------------------------------------------

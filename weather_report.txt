@@ -1,0 +1,113 @@
+
+📍 Suliyari Coal Mine - Forecast for Today, 21 June, 2025
+	• Weather: Light rain
+	• Max Temp: 29.7°C
+	• Min Temp: 24.1°C
+
+	Precipitation Info:
+	• Rain Probability: Yes
+	• 10:30 PM to 11:30 PM (78%)
+	• 5:30 AM to 11:30 AM (84%)
+	• Rain Impact: High
+	• Production Status: Production may be impacted
+
+📍 Suliyari Coal Mine - Forecast for Tomorrow, 22 June, 2025
+	• Weather: Moderate rain
+	• Max Temp: 32.5°C
+	• Min Temp: 25.4°C
+
+	Precipitation Info:
+	• Rain Probability: Yes
+	• 12:30 PM to 11:30 PM (100%)
+	• 6:30 AM to 11:30 AM (100%)
+	• Rain Impact: High
+	• Production Status: Production may be impacted
+
+📍 PKEB - Forecast for Today, 21 June, 2025
+	• Weather: Light rain
+	• Max Temp: 30.5°C
+	• Min Temp: 23.2°C
+
+	Precipitation Info:
+	• Rain Probability: Yes
+	• 1:30 PM to 7:30 PM (83%)
+	• Rain Impact: High
+	• Production Status: Production may be impacted
+
+📍 PKEB - Forecast for Tomorrow, 22 June, 2025
+	• Weather: Moderate rain
+	• Max Temp: 31.7°C
+	• Min Temp: 24.1°C
+
+	Precipitation Info:
+	• Rain Probability: Yes
+	• 1:30 PM to 5:30 AM (100%)
+	• Rain Impact: High
+	• Production Status: Production may be impacted
+
+📍 Talabira Coal Mine - Forecast for Today, 21 June, 2025
+	• Weather: Light rain
+	• Max Temp: 34.9°C
+	• Min Temp: 24.5°C
+
+	Precipitation Info:
+	• Rain Probability: No
+	• 1:30 AM to 5:30 AM (88%)
+	• Rain Impact: High
+	• Production Status: Production may be impacted
+
+📍 Talabira Coal Mine - Forecast for Tomorrow, 22 June, 2025
+	• Weather: Light rain
+	• Max Temp: 34.7°C
+	• Min Temp: 26.9°C
+
+	Precipitation Info:
+	• Rain Probability: Yes
+	• 10:30 PM to 5:30 AM (100%)
+	• Rain Impact: High
+	• Production Status: Production may be impacted
+
+📍 GPIII Coal Mines - Forecast for Today, 21 June, 2025
+	• Weather: Light rain
+	• Max Temp: 34.0°C
+	• Min Temp: 24.4°C
+
+	Precipitation Info:
+	• Rain Probability: Yes
+	• Rain Timing: None
+	• Rain Impact: Low
+	• Production Status: No impact expected
+
+📍 GPIII Coal Mines - Forecast for Tomorrow, 22 June, 2025
+	• Weather: Moderate rain
+	• Max Temp: 34.7°C
+	• Min Temp: 26.7°C
+
+	Precipitation Info:
+	• Rain Probability: Yes
+	• 9:30 PM to 5:30 AM (100%)
+	• Rain Impact: High
+	• Production Status: Production may be impacted
+
+📍 Kurmitar Iron Ore Mine - Forecast for Today, 21 June, 2025
+	• Weather: Light rain
+	• Max Temp: 28.8°C
+	• Min Temp: 20.4°C
+
+	Precipitation Info:
+	• Rain Probability: No
+	• Rain Timing: None
+	• Rain Impact: Low
+	• Production Status: No impact expected
+
+📍 Kurmitar Iron Ore Mine - Forecast for Tomorrow, 22 June, 2025
+	• Weather: Moderate rain
+	• Max Temp: 30.0°C
+	• Min Temp: 22.7°C
+
+	Precipitation Info:
+	• Rain Probability: Yes
+	• 6:30 PM to 5:30 AM (100%)
+	• 7:30 AM to 11:30 AM (76%)
+	• Rain Impact: High
+	• Production Status: Production may be impacted

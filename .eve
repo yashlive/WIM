@@ -1,0 +1,131 @@
+import os
+import requests
+from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+# Load .env variables
+load_dotenv()
+API_KEY = os.getenv("OPENWEATHER_API_KEY")
+
+mines = [
+    {"name": os.getenv("NAME1"), "lat": os.getenv("LAT1"), "lon": os.getenv("LON1")},
+    {"name": os.getenv("NAME2"), "lat": os.getenv("LAT2"), "lon": os.getenv("LON2")},
+    {"name": os.getenv("NAME3"), "lat": os.getenv("LAT3"), "lon": os.getenv("LON3")},
+    {"name": os.getenv("NAME4"), "lat": os.getenv("LAT4"), "lon": os.getenv("LON4")},
+    {"name": os.getenv("NAME5"), "lat": os.getenv("LAT5"), "lon": os.getenv("LON5")},
+]
+
+def get_ist(timestamp):
+    return datetime.utcfromtimestamp(timestamp) + timedelta(hours=5, minutes=30)
+
+def format_time(dt):
+    return dt.strftime("%-I:%M %p")
+
+def get_weather_icon(desc):
+    desc = desc.lower()
+    if "thunderstorm" in desc: return "⛈"
+    elif "drizzle" in desc: return "🌦"
+    elif "heavy" in desc: return "🌧"
+    elif "rain" in desc: return "🌧"
+    elif "clear" in desc: return "☀️"
+    elif "cloud" in desc: return "☁️"
+    return ""
+
+def rain_type(mm):
+    if mm < 0.5: return "drizzle"
+    elif mm < 2.5: return "light rain"
+    elif mm < 7.6: return "moderate rain"
+    else: return "heavy rain"
+
+def rain_impact(mm):
+    if mm > 20: return "Very High"
+    elif mm > 10: return "High"
+    elif mm > 5: return "Medium"
+    elif mm > 1: return "Low"
+    else: return "Very Low"
+
+def summarize_day(day):
+    return {
+        "weather": day["weather"][0]["description"],
+        "max": round(day["temp"]["max"], 1),
+        "min": round(day["temp"]["min"], 1)
+    }
+
+def generate_rain_slabs(hourly):
+    slabs = []
+    interval = 4  # 4 hours per slab
+    for i in range(0, 24, interval):
+        chunk = hourly[i:i+interval]
+        if len(chunk) < interval:
+            continue
+        rain = sum(h.get("rain", {}).get("1h", 0) for h in chunk)
+        pop = int(sum(h.get("pop", 0) for h in chunk) / interval * 100)
+        max_wind = max(h.get("wind_speed", 0) for h in chunk)
+        min_vis = min(h.get("visibility", 10000) for h in chunk) / 1000  # to km
+        lightning = any("thunderstorm" in h.get("weather", [{}])[0].get("description", "").lower() for h in chunk)
+        start = get_ist(chunk[0]["dt"])
+        end = get_ist(chunk[-1]["dt"] + 3600)
+
+        if rain > 0 or pop >= 50:
+            slabs.append({
+                "start": start,
+                "end": end,
+                "rain": round(rain, 1),
+                "pop": pop,
+                "type": rain_type(rain),
+                "wind": round(max_wind, 1),
+                "visibility": round(min_vis, 1),
+                "lightning": lightning
+            })
+
+    slabs.sort(key=lambda s: (-s["pop"], -s["rain"]))
+    return slabs[:5], round(sum(s["rain"] for s in slabs), 1)
+
+def get_forecast(mine):
+    try:
+        url = f"https://api.openweathermap.org/data/3.0/onecall?lat={mine['lat']}&lon={mine['lon']}&exclude=minutely,alerts&units=metric&appid={API_KEY}"
+        res = requests.get(url)
+        data = res.json()
+        hourly = data["hourly"]
+        daily = data["daily"]
+        now = datetime.now()
+
+        forecast_text = []
+
+        for i, label in zip([0, 1], ["Today", "Tomorrow"]):
+            day = summarize_day(daily[i])
+            icon = get_weather_icon(day["weather"])
+            date = (now + timedelta(days=i)).strftime("%d %B, %Y")
+            slabs, total_mm = generate_rain_slabs(hourly[i*24:i*24+24])
+            impact = rain_impact(total_mm)
+
+            forecast_text.append(f"📍 {mine['name']} - Forecast for {label}, {date}")
+            forecast_text.append(f"\t• Weather: {day['weather']} {icon}")
+            forecast_text.append(f"\t• Max Temp: {day['max']}°C")
+            forecast_text.append(f"\t• Min Temp: {day['min']}°C")
+            forecast_text.append(f"\t• Total Expected Rainfall: {total_mm} mm\n")
+            forecast_text.append(f"\tPrecipitation Info:")
+
+            for slab in slabs:
+                line = f"\t• {format_time(slab['start'])} to {format_time(slab['end'])} - {slab['pop']}%, {slab['rain']:.1f} mm ({slab['type']})"
+                forecast_text.append(line)
+                if slab["wind"] > 25:
+                    forecast_text.append(f"\t  ⚠️ Wind: {slab['wind']} km/h")
+                if slab["visibility"] < 4:
+                    forecast_text.append(f"\t  🌫 Visibility Alert: {slab['visibility']} km")
+                if slab["lightning"]:
+                    forecast_text.append("\t  ⚡ Lightning expected")
+
+            forecast_text.append(f"\t• Rain Impact: {impact}")
+            forecast_text.append(f"\t• Production Status: {'Production may be impacted' if total_mm > 0 else 'No disruption expected'}")
+            forecast_text.append("\n" + "="*100 + "\n")
+
+        return "\n".join(forecast_text)
+    except Exception as e:
+        return f"❌ Failed to fetch forecast for {mine['name']}: {e}"
+
+# Main run
+if __name__ == "__main__":
+    print("⏳ Fetching forecast...\n")
+    for mine in mines:
+        print(get_forecast(mine))

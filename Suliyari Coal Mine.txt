@@ -1,0 +1,30 @@
+📍 Suliyari Coal Mine - Weather Forecast for Saturday, 17 May 2025
+=== Today's Weather Forecast ===
+Weather: Mostly clear
+Max Temp: 42.1°C
+Min Temp: 26.2°C
+
+--- Precipitation Info ---
+Rain Probability: 0%
+Precipitation Expected: No
+Rain Alert: No rain expected
+Rain Impact: None
+✅ Production will not be impacted.
+
+--- Additional Info ---
+Wind Speed: 2.11 km/h
+Visibility: 10.0 km
+
+📍 Suliyari Coal Mine - Forecast for Sunday, 18 May 2025
+=== Tomorrow's Weather Forecast ===
+Max Temp: 42.1°C
+Min Temp: 26.2°C
+
+--- Precipitation Info ---
+Rain Probability: 1%
+Precipitation Expected: No
+Rain Alert: No rain expected
+Rain Impact: None
+✅ Production will not be impacted.
+
+-----------------------------------------------

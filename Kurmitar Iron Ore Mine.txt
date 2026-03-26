@@ -1,0 +1,30 @@
+📍 Kurmitar Iron Ore Mine - Weather Forecast for Saturday, 17 May 2025
+=== Today's Weather Forecast ===
+Weather: Cloudy
+Max Temp: 35.5°C
+Min Temp: 22.6°C
+
+--- Precipitation Info ---
+Rain Probability: 6%
+Precipitation Expected: No
+Rain Alert: No rain expected
+Rain Impact: None
+✅ Production will not be impacted.
+
+--- Additional Info ---
+Wind Speed: 2.66 km/h
+Visibility: 10.0 km
+
+📍 Kurmitar Iron Ore Mine - Forecast for Sunday, 18 May 2025
+=== Tomorrow's Weather Forecast ===
+Max Temp: 35.5°C
+Min Temp: 22.6°C
+
+--- Precipitation Info ---
+Rain Probability: 55%
+Precipitation Expected: Yes
+Rain Alert: Rain possible
+Rain Impact: Medium
+💧 Production may be impacted.
+
+-----------------------------------------------
