@@ -7,7 +7,7 @@ streamlit
 requests
 pandas
 numpy
-matplotlib\
+matplotlib
 tomorrowio
 openmeteo
 datetime
@@ -18,3 +18,10 @@ requests
 pandas
 numpy
 matplotlib
+streamlit
+pandas
+numpy
+python-dotenv
+requests
+matplotlib
+tomorrowio
