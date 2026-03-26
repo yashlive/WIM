@@ -300,6 +300,9 @@ st.markdown(_CSS, unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════
 # CONFIGURATION
 # ══════════════════════════════════════════════════════════════
+ACCUWEATHER_KEY = st.secrets.get("ACCUWEATHER_KEY", os.getenv("ACCUWEATHER_KEY", ""))
+OPENWEATHER_KEY = st.secrets.get("OPENWEATHER_KEY", os.getenv("OPENWEATHER_KEY", ""))
+TOMORROWIO_KEY  = st.secrets.get("TOMORROWIO_KEY", os.getenv("TOMORROWIO_KEY", ""))
 ACCUWEATHER_KEY = os.getenv("ACCUWEATHER_API_KEY", "")
 OPENWEATHER_KEY = os.getenv("OPENWEATHER_API_KEY", "")
 TOMORROWIO_KEY  = os.getenv("TOMORROW_API_KEY", "")
