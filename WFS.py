@@ -995,7 +995,7 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
         else:
             parts.append(f"Wind speeds up to {mwind} km/h will increase ore dust dispersal. Activate dust suppression and verify flyrock zones before each blast.")
 
-    if mvis <= VIS_STOP:
+    if mvis <= VIS_STOP and mvis > 0:
         parts.append(f"Visibility forecast to drop to {mvis} km. Restrict all haul truck and heavy equipment movement. Deploy flagmen at road intersections.")
     elif mvis <= VIS_CAUTION:
         parts.append(f"Reduced visibility of {mvis} km expected. Enforce lower truck speeds on haul roads and deploy additional spotters on active benches.")
@@ -1537,7 +1537,7 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         acss = ("wim-alert-high" if rain_t >= 15 or has_l else
                 "wim-alert-moderate" if rain_t >= 5 or hi_w else
                 "wim-alert-low" if rain_t > 0 else "wim-alert-none")
-        st.markdown(f'<div class="wim-alert {acss}"><div class="wim-alert-label">Forecast Advisory — Mining Operations</div>{rec}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="wim-alert {acss}"><div class="wim-alert-label">Forecast Advisory</div>{rec}</div>', unsafe_allow_html=True)
 
         # Summary Metrics
         mcols = st.columns(7)
