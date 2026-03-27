@@ -830,28 +830,59 @@ def hour_to_slab(h):
         elif s < e and s <= h < e:    return (s, e, n)
     return None
 
-# DYNAMIC 2-HOUR SLABS BASED ON CURRENT TIME
-def get_current_slabs():
-    """Get 2-hour slabs based on current time"""
-    current_hour = now_ist().hour
+# TRULY DYNAMIC 2-HOUR SLABS - aligns with current time
+def generate_dynamic_slabs():
+    """Generate 2-hour slabs aligned to next 30-min boundary from current time"""
+    now = now_ist()
+    current_hour = now.hour
+    current_min = now.minute
     
-    if 0 <= current_hour < 2:      return (0, 2, "12:30 AM – 2:30 AM"), (2, 4, "2:30 AM – 4:30 AM")
-    elif 2 <= current_hour < 4:      return (2, 4, "2:30 AM – 4:30 AM"), (4, 6, "4:30 AM – 6:30 AM")
-    elif 4 <= current_hour < 6:      return (4, 6, "4:30 AM – 6:30 AM"), (6, 8, "6:30 AM – 8:30 AM")
-    elif 6 <= current_hour < 8:      return (6, 8, "6:30 AM – 8:30 AM"), (8, 10, "8:30 AM – 10:30 AM")
-    elif 8 <= current_hour < 10:     return (8, 10, "8:30 AM – 10:30 AM"), (10, 12, "10:30 AM – 12:30 PM")
-    elif 10 <= current_hour < 12:    return (10, 12, "10:30 AM – 12:30 PM"), (12, 14, "12:30 PM – 2:30 PM")
-    elif 12 <= current_hour < 14:    return (12, 14, "12:30 PM – 2:30 PM"), (14, 16, "2:30 PM – 4:30 PM")
-    elif 14 <= current_hour < 16:    return (14, 16, "2:30 PM – 4:30 PM"), (16, 18, "4:30 PM – 6:30 PM")
-    elif 16 <= current_hour < 18:    return (16, 18, "4:30 PM – 6:30 PM"), (18, 20, "6:30 PM – 8:30 PM")
-    elif 18 <= current_hour < 20:    return (18, 20, "6:30 PM – 8:30 PM"), (20, 22, "8:30 PM – 10:30 PM")
-    elif 20 <= current_hour < 22:    return (20, 22, "8:30 PM – 10:30 PM"), (22, 0, "10:30 PM – 12:30 AM")
-    else:                           return (22, 2, "10:30 PM – 12:30 AM"), (2, 4, "12:30 AM – 2:30 AM")
+    # Determine next 30-min boundary
+    if current_min < 30:
+        start_hour = current_hour
+        start_min = 30
+    else:
+        start_hour = current_hour + 1
+        start_min = 0
+    
+    # Handle day wrap
+    if start_hour >= 24:
+        start_hour = 0
+    
+    slabs = []
+    for i in range(6):  # Generate 6 slabs (12 hours of coverage)
+        s_hour = (start_hour + i * 2) % 24
+        e_hour = (s_hour + 2) % 24
+        
+        # Format times
+        s_label = f"{s_hour % 12 or 12}:{start_min:02d} {'AM' if s_hour < 12 else 'PM'}"
+        e_min = start_min
+        e_label = f"{e_hour % 12 or 12}:{e_min:02d} {'AM' if e_hour < 12 else 'PM'}"
+        
+        # Handle overnight wrap
+        if s_hour > e_hour:  # Overnight
+            full_label = f"{s_label} – {e_label} (next day)"
+        else:
+            full_label = f"{s_label} – {e_label}"
+        
+        slabs.append((s_hour, e_hour, full_label, start_min))
+    
+    return slabs
+
+def hour_to_slab(h, slabs):
+    """Map hour to dynamic slab"""
+    for s, e, n, m in slabs:
+        if s <= h < e or (s > e and (h >= s or h < e)):  # Handle overnight
+            return (s, e, n, m)
+    return None
 
 def build_slabs(hourly):
+    # Generate dynamic slabs based on current time
+    dynamic_slabs = generate_dynamic_slabs()
+    
     raw = collections.defaultdict(lambda: dict(rain=0, pop=[], wind=[], vis=[], lightning=[], hum=[], count=0))
     for hk, d in hourly:
-        sk = hour_to_slab(hk.hour)
+        sk = hour_to_slab(hk.hour, dynamic_slabs)
         if not sk: continue
         r = raw[sk]
         r["rain"] += d["rain_mm"]; r["pop"].append(d["pop"])
@@ -866,10 +897,7 @@ def build_slabs(hourly):
             vis=round(avg(r["vis"]), 1), hum=round(avg(r["hum"]), 1),
             lightning=any(r["lightning"])))
     slabs.sort(key=lambda x: x["sort"])
-    # Filter to show only future slabs from current time
-    current_hour = now_ist().hour
-    future_slabs = [s for s in slabs if s["sort"] >= current_hour - (current_hour % 2)]
-    return future_slabs if future_slabs else slabs[-2:] if len(slabs) >= 2 else slabs
+    return slabs
 
 def day_summary(hourly, mine_type="Coal Open Cast Mine"):
     if not hourly:
