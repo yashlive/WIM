@@ -314,7 +314,7 @@ DEFAULT_SITES = [
     {"id": "builtin-parsa",      "name": "Parsa",           "lat": 22.824950, "lon": 82.804340, "type": "Coal Open Cast Mine", "builtin": True},
     {"id": "builtin-talabira",   "name": "Talabira",       "lat": 21.756317, "lon": 83.970446, "type": "Coal Open Cast Mine", "builtin": True},
     {"id": "builtin-gare-pelma", "name": "Gare Pelma",     "lat": 22.185835, "lon": 83.496813, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-kurmitar",   "name": "Kurmitar",       "lat": 21.754655, "lon": 85.161185, "type": "Iron Ore Mine", "builtin": True},
+    {"id": "builtin-kurmitra",   "name": "Kurmitra",       "lat": 21.754655, "lon": 85.161185, "type": "Iron Ore Mine", "builtin": True},
 ]
 IST       = pytz.timezone('Asia/Kolkata')
 UTC       = pytz.utc
@@ -871,6 +871,29 @@ def generate_dynamic_slabs():
     
     return slabs
 
+def generate_fixed_slabs():
+    """Generate fixed 2-hour slabs starting from midnight (00:00) for non-today days"""
+    slabs = []
+    for i in range(12):  # 12 slabs = 24 hours
+        s_hour = i * 2
+        e_hour = (i + 1) * 2
+        
+        # Format times
+        s_label = f"{s_hour % 12 or 12}:00 {'AM' if s_hour < 12 else 'PM'}"
+        e_label = f"{e_hour % 12 or 12}:00 {'AM' if e_hour < 12 else 'PM'}"
+        
+        # Handle overnight wrap
+        if e_hour >= 24:
+            e_hour = 0
+            e_label = "12:00 AM (next day)"
+            full_label = f"{s_label} – {e_label}"
+        else:
+            full_label = f"{s_label} – {e_label}"
+        
+        slabs.append((s_hour, e_hour, full_label, 0))
+    
+    return slabs
+
 def hour_to_slab(h, slabs):
     """Map hour to dynamic slab"""
     for s, e, n, m in slabs:
@@ -878,13 +901,16 @@ def hour_to_slab(h, slabs):
             return (s, e, n, m)
     return None
 
-def build_slabs(hourly):
-    # Generate dynamic slabs based on current time
-    dynamic_slabs = generate_dynamic_slabs()
+def build_slabs(hourly, is_today=False):
+    # Use dynamic slabs for today, fixed slabs for other days
+    if is_today:
+        slabs = generate_dynamic_slabs()
+    else:
+        slabs = generate_fixed_slabs()
     
     raw = collections.defaultdict(lambda: dict(rain=0, pop=[], wind=[], vis=[], lightning=[], hum=[], count=0))
     for hk, d in hourly:
-        sk = hour_to_slab(hk.hour, dynamic_slabs)
+        sk = hour_to_slab(hk.hour, slabs)
         if not sk: continue
         r = raw[sk]
         r["rain"] += d["rain_mm"]; r["pop"].append(d["pop"])
@@ -901,10 +927,14 @@ def build_slabs(hourly):
     slabs.sort(key=lambda x: x["sort"])
     return slabs
 
-def day_summary(hourly, mine_type="Coal Open Cast Mine"):
+def day_summary(hourly, mine_type="Coal Open Cast Mine", target_day=None):
     if not hourly:
         return dict(max_temp="—", min_temp="—", total_rain=0, max_pop=0,
-                    condition="—", humidity=0, slabs=[], max_wind=0, min_vis=10)
+                    condition="—", humidity=0, slabs=[], avg_wind=0, min_vis=10)
+    
+    # Determine if this is today's data
+    today = now_ist().date()
+    is_today = (target_day == today) if target_day else False
     
     # Mine-specific validation
     is_iron_ore = "Iron Ore" in mine_type
@@ -930,7 +960,7 @@ def day_summary(hourly, mine_type="Coal Open Cast Mine"):
         cloud=round(sum(clouds) / len(clouds), 0) if clouds else None,
         avg_wind=round(sum(winds) / len(winds), 1) if winds else 0, 
         min_vis=round(min(viss), 1) if viss else 10,
-        slabs=build_slabs(hourly))
+        slabs=build_slabs(hourly, is_today=is_today))
 
 # ══════════════════════════════════════════════════════════════
 # SMART RECOMMENDATION
@@ -1242,7 +1272,7 @@ def render_weekly(by_day, days, site_type="Coal Open Cast Mine"):
         if d not in by_day:
             cols[i].markdown(f'<div class="wim-day"><div class="wim-day-label">{lbl}</div><div class="wim-day-date">{d.strftime("%d %b")}</div><div style="color:#94A3B8;font-size:0.75rem;margin-top:8px;">No data</div></div>', unsafe_allow_html=True)
             continue
-        s    = day_summary(by_day[d], site_type); sl = s["slabs"]
+        s    = day_summary(by_day[d], site_type, target_day=d); sl = s["slabs"]
         rain = s["total_rain"]; has_l = any(x["lightning"] for x in sl)
         max_pop = s["max_pop"]
         mine_type_current = site_type  # Use the passed site_type for consistency
@@ -1528,7 +1558,7 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
             st.markdown('<div class="wim-alert wim-alert-none">No forecast data for this day.</div>', unsafe_allow_html=True)
             continue
 
-        ds = day_summary(dh, site.get("type", "Coal Open Cast Mine")); sl = ds["slabs"]
+        ds = day_summary(dh, site.get("type", "Coal Open Cast Mine"), target_day=tday); sl = ds["slabs"]
 
         # Forecast Advisory
         mine_type = site.get("type", "Coal Open Cast Mine")
