@@ -775,6 +775,9 @@ def build_forecast(lat, lon, days=7):
             total_weight = sum(weight for _, weight in valid_vis)
             return weighted_sum / total_weight
         
+        # Get rain values with quality check
+        rain_vals = [d["rain"] for d in srcs.values()]
+        
         # Conservative rain aggregation with probability validation
         if len(rain_vals) >= 2:
             # Take median but validate against probability
