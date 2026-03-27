@@ -834,32 +834,23 @@ def hour_to_slab(h):
 
 # TRULY DYNAMIC 2-HOUR SLABS - aligns with current time
 def generate_dynamic_slabs():
-    """Generate 2-hour slabs aligned to next 30-min boundary from current time"""
+    """Generate 2-hour slabs starting from 1 hour before current time"""
     now = now_ist()
     current_hour = now.hour
     current_min = now.minute
     
-    # Determine next 30-min boundary
-    if current_min < 30:
-        start_hour = current_hour
-        start_min = 30
-    else:
-        start_hour = current_hour + 1
-        start_min = 0
-    
-    # Handle day wrap
-    if start_hour >= 24:
-        start_hour = 0
+    # Start from 1 hour before current time, aligned to hour boundary
+    start_hour = (current_hour - 1) % 24
+    start_min = 0
     
     slabs = []
-    for i in range(6):  # Generate 6 slabs (12 hours of coverage)
+    for i in range(7):  # Generate 7 slabs (14 hours of coverage)
         s_hour = (start_hour + i * 2) % 24
         e_hour = (s_hour + 2) % 24
         
         # Format times
-        s_label = f"{s_hour % 12 or 12}:{start_min:02d} {'AM' if s_hour < 12 else 'PM'}"
-        e_min = start_min
-        e_label = f"{e_hour % 12 or 12}:{e_min:02d} {'AM' if e_hour < 12 else 'PM'}"
+        s_label = f"{s_hour % 12 or 12}:00 {'AM' if s_hour < 12 else 'PM'}"
+        e_label = f"{e_hour % 12 or 12}:00 {'AM' if e_hour < 12 else 'PM'}"
         
         # Handle overnight wrap
         if s_hour > e_hour:  # Overnight
@@ -867,7 +858,7 @@ def generate_dynamic_slabs():
         else:
             full_label = f"{s_label} – {e_label}"
         
-        slabs.append((s_hour, e_hour, full_label, start_min))
+        slabs.append((s_hour, e_hour, full_label, 0))
     
     return slabs
 
