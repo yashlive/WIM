@@ -754,15 +754,12 @@ def build_forecast(lat, lon, days=7):
     for hk in sorted(raw.keys()):
         srcs = raw[hk]
         def wavg(field):
-            # Only filter out obviously wrong values (0km during day)
-            current_hour = now_ist().hour
-            valid_vis = [(d["vis"], API_WEIGHTS.get(src, 0)) for src, d in srcs.items() 
-                       if d["vis"] > 0 or (d["vis"] == 0 and 20 <= current_hour <= 6)]  # Allow 0vis for night 8PM-6AM
-            if not valid_vis:
-                return 10  # Default visibility
+            total_weight = sum(API_WEIGHTS.get(src, 0) for src in srcs.keys())
+            if total_weight == 0:
+                vals = [d[field] for d in srcs.values()]
+                return sum(vals) / len(vals) if vals else 0
             
-            weighted_sum = sum(vis * weight for vis, weight in valid_vis)
-            total_weight = sum(weight for _, weight in valid_vis)
+            weighted_sum = sum(d[field] * API_WEIGHTS.get(src, 0) for src, d in srcs.items())
             return weighted_sum / total_weight
         
         def wavg_vis():
