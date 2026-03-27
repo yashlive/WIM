@@ -1213,6 +1213,7 @@ def render_weekly(by_day, days, site_type="Coal Open Cast Mine"):
         s    = day_summary(by_day[d], site_type); sl = s["slabs"]
         rain = s["total_rain"]; has_l = any(x["lightning"] for x in sl)
         max_pop = s["max_pop"]
+        mine_type_current = site_type  # Use the passed site_type for consistency
         
         # Use smart rain classification with probability (same as condition_str logic)
         if rain >= 15 and max_pop >= 25:             flag, fcss = "Heavy Rain", "flag-heavy"
@@ -1495,7 +1496,7 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
             st.markdown('<div class="wim-alert wim-alert-none">No forecast data for this day.</div>', unsafe_allow_html=True)
             continue
 
-        ds = day_summary(dh); sl = ds["slabs"]
+        ds = day_summary(dh, site.get("type", "Coal Open Cast Mine")); sl = ds["slabs"]
 
         # Forecast Advisory
         mine_type = site.get("type", "Coal Open Cast Mine")
