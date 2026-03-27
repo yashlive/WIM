@@ -915,6 +915,7 @@ def day_summary(hourly, mine_type="Coal Open Cast Mine"):
     winds  = [d["wind_kmh"] for _, d in hourly]
     viss   = [d["vis_km"] for _, d in hourly]
     hums   = [d["humidity"] for _, d in hourly]
+    clouds = [d.get("cloud", 0) for _, d in hourly if d.get("cloud", 0) > 0]
     
     total  = round(sum(rains), 1)
     descs  = [d["desc"] for _, d in hourly if d["desc"]]
@@ -926,6 +927,7 @@ def day_summary(hourly, mine_type="Coal Open Cast Mine"):
         max_pop=int(round(sorted(pops)[int(len(pops)*0.75)] if pops else 0, 0)),  # Use 75th percentile instead of max
         condition=condition_str(total, descs, max(pops) if pops else 0),
         humidity=round(sum(hums) / len(hums), 1) if hums else 0,
+        cloud=round(sum(clouds) / len(clouds), 0) if clouds else None,
         max_wind=round(max(winds), 1), 
         min_vis=round(min(viss), 1) if viss else 10,
         slabs=build_slabs(hourly))
@@ -1014,7 +1016,9 @@ def rain_accum(hourly, target_day=None):
     for h in (2, 4, 6, 12, 24):
         seg = [(dt, d) for dt, d in hourly if anchor <= dt < anchor + timedelta(hours=h)]
         mm  = round(sum(d["rain_mm"] for _, d in seg), 1)
-        pop = int(max((d["pop"] for _, d in seg), default=0))
+        # Use 75th percentile for probability (not max) to avoid inflated values
+        pops = [d["pop"] for _, d in seg if d["pop"] > 0]
+        pop = int(sorted(pops)[int(len(pops)*0.75)] if pops else 0)
         out[h] = (mm, pop)
     return out
 
@@ -1537,11 +1541,12 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
 
         # Summary Metrics
         mcols = st.columns(7)
+        cloud_val = f"{int(ds['cloud'])}%" if ds.get('cloud') else "—"
         for col, (lbl, val) in zip(mcols, [
             ("Condition", ds["condition"]), ("Max Temp", f"{ds['max_temp']}°C"),
             ("Min Temp", f"{ds['min_temp']}°C"), ("Total Rain", f"{ds['total_rain']} mm"),
             ("Rain Prob.", f"{ds['max_pop']}%"), ("Max Wind", f"{ds['max_wind']} km/h"),
-            ("Min Vis.", f"{ds['min_vis']} km"),
+            ("Cloud", cloud_val),
         ]):
             col.markdown(f'<div class="wim-metric"><div class="wim-metric-label">{lbl}</div><div class="wim-metric-value">{val}</div></div>', unsafe_allow_html=True)
 
