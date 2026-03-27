@@ -928,7 +928,7 @@ def day_summary(hourly, mine_type="Coal Open Cast Mine"):
         condition=condition_str(total, descs, max(pops) if pops else 0),
         humidity=round(sum(hums) / len(hums), 1) if hums else 0,
         cloud=round(sum(clouds) / len(clouds), 0) if clouds else None,
-        max_wind=round(max(winds), 1), 
+        avg_wind=round(sum(winds) / len(winds), 1) if winds else 0, 
         min_vis=round(min(viss), 1) if viss else 10,
         slabs=build_slabs(hourly))
 
@@ -936,7 +936,7 @@ def day_summary(hourly, mine_type="Coal Open Cast Mine"):
 # SMART RECOMMENDATION
 # ══════════════════════════════════════════════════════════════
 def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
-    rain = ds["total_rain"]; mwind = ds["max_wind"]
+    rain = ds["total_rain"]; mwind = ds.get("max_wind", ds.get("avg_wind", 0))
     mvis = ds["min_vis"]; pop = ds["max_pop"]
     has_l   = any(s["lightning"] for s in slabs)
     rain_sl = [s for s in slabs if s["mm"] > 0]
@@ -1533,7 +1533,7 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         # Forecast Advisory
         mine_type = site.get("type", "Coal Open Cast Mine")
         rec = smart_rec(ds, sl, tday, mine_type)
-        rain_t = ds["total_rain"]; has_l = any(s["lightning"] for s in sl); hi_w = ds["max_wind"] >= WIND_CAUTION
+        rain_t = ds["total_rain"]; has_l = any(s["lightning"] for s in sl); hi_w = ds["avg_wind"] >= WIND_CAUTION
         acss = ("wim-alert-high" if rain_t >= 15 or has_l else
                 "wim-alert-moderate" if rain_t >= 5 or hi_w else
                 "wim-alert-low" if rain_t > 0 else "wim-alert-none")
@@ -1545,8 +1545,8 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         for col, (lbl, val) in zip(mcols, [
             ("Condition", ds["condition"]), ("Max Temp", f"{ds['max_temp']}°C"),
             ("Min Temp", f"{ds['min_temp']}°C"), ("Total Rain", f"{ds['total_rain']} mm"),
-            ("Rain Prob.", f"{ds['max_pop']}%"), ("Max Wind", f"{ds['max_wind']} km/h"),
-            ("Cloud", cloud_val),
+            ("Rain Prob.", f"{ds['max_pop']}%"), ("Wind", f"{ds['avg_wind']} km/h"),
+            ("Cloud Cover", cloud_val),
         ]):
             col.markdown(f'<div class="wim-metric"><div class="wim-metric-label">{lbl}</div><div class="wim-metric-value">{val}</div></div>', unsafe_allow_html=True)
 
