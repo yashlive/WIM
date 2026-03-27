@@ -854,7 +854,7 @@ def get_current_slabs():
 def build_slabs(hourly):
     raw = collections.defaultdict(lambda: dict(rain=0, pop=[], wind=[], vis=[], lightning=[], hum=[], count=0))
     for hk, d in hourly:
-        sk = get_current_slabs()
+        sk = hour_to_slab(hk.hour)
         if not sk: continue
         r = raw[sk]
         r["rain"] += d["rain_mm"]; r["pop"].append(d["pop"])
@@ -869,7 +869,10 @@ def build_slabs(hourly):
             vis=round(avg(r["vis"]), 1), hum=round(avg(r["hum"]), 1),
             lightning=any(r["lightning"])))
     slabs.sort(key=lambda x: x["sort"])
-    return slabs
+    # Filter to show only future slabs from current time
+    current_hour = now_ist().hour
+    future_slabs = [s for s in slabs if s["sort"] >= current_hour - (current_hour % 2)]
+    return future_slabs if future_slabs else slabs[-2:] if len(slabs) >= 2 else slabs
 
 def day_summary(hourly, mine_type="Coal Open Cast Mine"):
     if not hourly:
