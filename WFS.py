@@ -997,7 +997,7 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
 
     if mvis <= VIS_STOP and mvis > 0:
         parts.append(f"Visibility forecast to drop to {mvis} km. Restrict all haul truck and heavy equipment movement. Deploy flagmen at road intersections.")
-    elif mvis <= VIS_CAUTION:
+    elif mvis <= VIS_CAUTION and mvis > 0:
         parts.append(f"Reduced visibility of {mvis} km expected. Enforce lower truck speeds on haul roads and deploy additional spotters on active benches.")
 
     return " ".join(parts) if parts else f"{dlabel} presents no significant weather concerns. All planned operations can proceed as scheduled."
