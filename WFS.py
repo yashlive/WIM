@@ -307,12 +307,12 @@ ADMIN_PASSWORD  = os.getenv("ADMIN_PASSWORD", "Adani@2026#Mine")
 SITES_FILE      = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mine_sites.json")
 
 DEFAULT_SITES = [
-    {"id": "builtin-suliyari",   "name": "Suliyari",         "lat": 23.941626, "lon": 82.331934, "builtin": True},
-    {"id": "builtin-dhirauli",   "name": "Dhirauli",        "lat": 23.936440, "lon": 82.358836, "builtin": True},
-    {"id": "builtin-parsa",      "name": "Parsa",           "lat": 22.824950, "lon": 82.804340, "builtin": True},
-    {"id": "builtin-talabira",   "name": "Talabira",       "lat": 21.756317, "lon": 83.970446, "builtin": True},
-    {"id": "builtin-gare-pelma", "name": "Gare Pelma",     "lat": 22.185835, "lon": 83.496813, "builtin": True},
-    {"id": "builtin-kurmitar",   "name": "Kurmitar",       "lat": 21.754655, "lon": 85.161185, "builtin": True},
+    {"id": "builtin-suliyari",   "name": "Suliyari",         "lat": 23.941626, "lon": 82.331934, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-dhirauli",   "name": "Dhirauli",        "lat": 23.936440, "lon": 82.358836, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-parsa",      "name": "Parsa",           "lat": 22.824950, "lon": 82.804340, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-talabira",   "name": "Talabira",       "lat": 21.756317, "lon": 83.970446, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-gare-pelma", "name": "Gare Pelma",     "lat": 22.185835, "lon": 83.496813, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-kurmitra",   "name": "Kurmitra",       "lat": 21.754655, "lon": 85.161185, "type": "Iron Ore Mine", "builtin": True},
 ]
 IST       = pytz.timezone('Asia/Kolkata')
 UTC       = pytz.utc
@@ -457,8 +457,7 @@ def rain_badge_html(mm):
     elif mm < 0.3:  return f'<span class="wim-badge b-drizzle">{mm} mm · Drizzle</span>'
     elif mm < 1.5:  return f'<span class="wim-badge b-light">{mm} mm · Light</span>'
     elif mm < 5.0:  return f'<span class="wim-badge b-moderate">{mm} mm · Moderate</span>'
-    elif mm < 8.0:  return f'<span class="wim-badge b-heavy">{mm} mm · Heavy</span>'
-    else:           return f'<span class="wim-badge b-vheavy">{mm} mm · Very Heavy</span>'
+    else:           return f'<span class="wim-badge b-heavy">{mm} mm · Heavy</span>'
 
 def mining_impact_html(mm, wind, vis, lightning):
     if lightning:
@@ -471,17 +470,30 @@ def mining_impact_html(mm, wind, vis, lightning):
         return '<span class="wim-badge b-monitor">Monitor</span>'
     return '<span class="wim-badge b-clear-ops">Clear</span>'
 
-def condition_str(total, descs):
-    if total >= 15: return "Heavy Rain"
-    elif total >= 5:  return "Moderate Rain"
-    elif total >= 1:  return "Light Rain"
+def condition_str(total, descs, max_pop=0):
+    # Smart logic: Consider both rainfall amount AND probability
+    # Low probability rain should not be classified as heavy
+    
+    # High rainfall with decent probability
+    if total >= 15 and max_pop >= 25: return "Heavy Rain"
+    # High rainfall but very low probability - downgrade
+    elif total >= 15 and max_pop < 25: return "Moderate Rain"
+    # Moderate rainfall with decent probability
+    elif total >= 5 and max_pop >= 35: return "Moderate Rain"
+    # Moderate rainfall but low probability - downgrade
+    elif total >= 5 and max_pop < 35: return "Light Rain"
+    # Light rainfall with decent probability
+    elif total >= 1.5 and max_pop >= 45: return "Light Rain"
+    # Light rainfall but low probability - downgrade to drizzle
+    elif total >= 1.5 and max_pop < 45: return "Drizzle"
     elif total > 0:   return "Drizzle"
+    
+    # Check weather descriptions as backup
     if descs:
         t = collections.Counter(descs).most_common(1)[0][0].lower()
-        if "clear" in t or "sun" in t:         return "Clear"
-        elif "cloud" in t or "overcast" in t:  return "Cloudy"
-        elif "fog" in t or "mist" in t:        return "Foggy"
-        elif "thunder" in t:                   return "Thunderstorm"
+        if "heavy" in t or "storm" in t: return "Heavy Rain"
+        if "moderate" in t or "rain" in t: return "Moderate Rain"
+        if "light" in t or "drizzle" in t: return "Light Rain"
     return "Clear"
 
 # ══════════════════════════════════════════════════════════════
@@ -787,7 +799,7 @@ def day_summary(hourly):
     return dict(
         max_temp=round(max(temps), 1), min_temp=round(min(temps), 1),
         total_rain=total, max_pop=int(round(max(pops), 0)),
-        condition=condition_str(total, descs),
+        condition=condition_str(total, descs, max(pops)),
         humidity=round(sum(hums) / len(hums), 1) if hums else 0,
         max_wind=round(max(winds), 1), min_vis=round(min(viss), 1),
         slabs=build_slabs(hourly))
@@ -795,7 +807,7 @@ def day_summary(hourly):
 # ══════════════════════════════════════════════════════════════
 # SMART RECOMMENDATION
 # ══════════════════════════════════════════════════════════════
-def smart_rec(ds, slabs, target_day):
+def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
     rain = ds["total_rain"]; mwind = ds["max_wind"]
     mvis = ds["min_vis"]; pop = ds["max_pop"]
     has_l   = any(s["lightning"] for s in slabs)
@@ -806,18 +818,35 @@ def smart_rec(ds, slabs, target_day):
     dlabel = "Today" if target_day == today else target_day.strftime("%A")
     parts  = []
 
+    # Mine-specific wind thresholds
+    if "Iron Ore" in mine_type:
+        WIND_CAUTION_MINE = 25  # Lower threshold for iron ore operations
+        WIND_STOP_MINE = 28      # Lower threshold for iron ore operations
+    else:
+        WIND_CAUTION_MINE = WIND_CAUTION  # 30 km/h for coal
+        WIND_STOP_MINE = WIND_STOP       # 32 km/h for coal
+
     if rain == 0 and pop < 25:
-        parts.append(f"{dlabel} is forecast to be completely dry. All open-cast operations including OB removal, drilling, blasting, and coal dispatch can proceed normally.")
+        if "Coal" in mine_type:
+            parts.append(f"{dlabel} is forecast to be completely dry. All open-cast operations including OB removal, drilling, blasting, and coal dispatch can proceed normally.")
+        else:
+            parts.append(f"{dlabel} is forecast to be completely dry. All open-cast operations including OB removal, drilling, blasting, and ore dispatch can proceed normally.")
     elif rain == 0 and pop >= 25:
         parts.append(f"{dlabel} is likely dry with a {pop}% chance of isolated showers. Schedule blasting in morning hours and monitor sky conditions before afternoon shift.")
     elif heavy_sl:
         hw = heavy_sl[0]["label"]
         parts.append(f"Heavy rainfall totalling {rain} mm is expected {dlabel.lower()}, peaking around {hw}.")
-        parts.append("Pit drainage must be inspected before morning shift. Bench and haul road surfaces will be severely impacted — mandatory post-rain ground assessment required before resuming OB removal, shovel, and dozer work. Deploy coal stockpile covers.")
+        if "Coal" in mine_type:
+            parts.append("Pit drainage must be inspected before morning shift. Bench and haul road surfaces will be severely impacted — mandatory post-rain ground assessment required before resuming OB removal, shovel, and dozer work. Deploy coal stockpile covers.")
+        else:
+            parts.append("Pit drainage must be inspected before morning shift. Bench and haul road surfaces will be severely impacted — mandatory post-rain ground assessment required before resuming OB removal, shovel, and dozer work. Deploy ore stockpile covers.")
     elif mod_sl:
         first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]
         parts.append(f"Moderate rainfall of {rain} mm is forecast from {first} through {last}.")
-        parts.append("Plan coal loading and dispatch in the pre-rain dry window. Allow 1–2 hours post-rain drainage assessment before resuming heavy equipment on active benches. Check blast hole integrity before charging.")
+        if "Coal" in mine_type:
+            parts.append("Plan coal loading and dispatch in the pre-rain dry window. Allow 1–2 hours post-rain drainage assessment before resuming heavy equipment on active benches. Check blast hole integrity before charging.")
+        else:
+            parts.append("Plan ore loading and dispatch in the pre-rain dry window. Allow 1–2 hours post-rain drainage assessment before resuming heavy equipment on active benches. Check blast hole integrity before charging.")
     elif rain_sl:
         first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]
         parts.append(f"Light rainfall of {rain} mm is expected between {first} and {last}.")
@@ -825,12 +854,18 @@ def smart_rec(ds, slabs, target_day):
 
     if has_l:
         lt = [s["label"] for s in slabs if s["lightning"]]
-        parts.append(f"Lightning forecast around {lt[0]}. All blasting, drilling, and work near tall equipment (draglines, shovels, conveyors) must halt 30 minutes before the storm and resume only after 30 clear minutes.")
+        parts.append(f"Lightning forecast around {lt[0]}. All blasting, drilling, and work near tall equipment (shovels, conveyors) must halt 30 minutes before the storm and resume only after 30 clear minutes.")
 
-    if mwind >= WIND_STOP:
-        parts.append(f"Wind gusts of {mwind} km/h exceed the DGMS blasting limit ({WIND_STOP} km/h). Defer all blasting. Extend flyrock exclusion zones and confirm with safety officer before resuming.")
-    elif mwind >= WIND_CAUTION:
-        parts.append(f"Wind speeds up to {mwind} km/h will increase coal dust dispersal. Activate dust suppression and verify flyrock zones before each blast.")
+    if mwind >= WIND_STOP_MINE:
+        if "Coal" in mine_type:
+            parts.append(f"Wind gusts of {mwind} km/h exceed the DGMS blasting limit ({WIND_STOP} km/h). Defer all blasting. Extend flyrock exclusion zones and confirm with safety officer before resuming.")
+        else:
+            parts.append(f"Wind gusts of {mwind} km/h exceed safe blasting limits for iron ore operations ({WIND_STOP_MINE} km/h). Defer all blasting. Extend flyrock exclusion zones and confirm with safety officer before resuming.")
+    elif mwind >= WIND_CAUTION_MINE:
+        if "Coal" in mine_type:
+            parts.append(f"Wind speeds up to {mwind} km/h will increase coal dust dispersal. Activate dust suppression and verify flyrock zones before each blast.")
+        else:
+            parts.append(f"Wind speeds up to {mwind} km/h will increase ore dust dispersal. Activate dust suppression and verify flyrock zones before each blast.")
 
     if mvis <= VIS_STOP:
         parts.append(f"Visibility forecast to drop to {mvis} km. Restrict all haul truck and heavy equipment movement. Deploy flagmen at road intersections.")
@@ -1080,7 +1115,7 @@ def render_weekly(by_day, days):
         rain = s["total_rain"]; has_l = any(x["lightning"] for x in sl)
         if rain >= 15 or has_l:                           flag, fcss = "Heavy Rain", "flag-heavy"
         elif rain >= 5 or s["max_wind"] >= WIND_CAUTION:  flag, fcss = "Moderate Risk", "flag-moderate"
-        elif rain >= 1:                                   flag, fcss = "Light Rain", "flag-light"
+        elif rain >= 1.5:                                 flag, fcss = "Light Rain", "flag-light"
         else:                                             flag, fcss = "Clear", "flag-clear"
         day_css = "wim-day wim-day-active" if i == 0 else "wim-day"
         cols[i].markdown(f"""<div class="{day_css}">
@@ -1356,7 +1391,8 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         ds = day_summary(dh); sl = ds["slabs"]
 
         # Forecast Advisory
-        rec = smart_rec(ds, sl, tday)
+        mine_type = site.get("type", "Coal Open Cast Mine")
+        rec = smart_rec(ds, sl, tday, mine_type)
         rain_t = ds["total_rain"]; has_l = any(s["lightning"] for s in sl); hi_w = ds["max_wind"] >= WIND_CAUTION
         acss = ("wim-alert-high" if rain_t >= 15 or has_l else
                 "wim-alert-moderate" if rain_t >= 5 or hi_w else
