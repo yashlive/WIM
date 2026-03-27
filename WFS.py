@@ -892,8 +892,9 @@ def day_summary(hourly, mine_type="Coal Open Cast Mine"):
     return dict(
         max_temp=round(max(temps), 1) if temps else "—", 
         min_temp=round(min(temps), 1) if temps else "—",
-        total_rain=total, max_pop=int(round(max(pops), 0)),
-        condition=condition_str(total, descs, max(pops)),
+        total_rain=total, 
+        max_pop=int(round(sorted(pops)[int(len(pops)*0.75)] if pops else 0, 0)),  # Use 75th percentile instead of max
+        condition=condition_str(total, descs, max(pops) if pops else 0),
         humidity=round(sum(hums) / len(hums), 1) if hums else 0,
         max_wind=round(max(winds), 1), 
         min_vis=round(min(viss), 1) if viss else 10,
