@@ -116,6 +116,8 @@ header[data-testid="stHeader"] button[kind="header"],header[data-testid="stHeade
 .flag-light{{background:#EFF6FF;color:#1D4ED8;}}
 .flag-moderate{{background:#FFFBEB;color:#D97706;}}
 .flag-heavy{{background:#FFF1F2;color:#DC2626;}}
+.flag-drizzle{{background:#F0F9FF;color:#0EA5E9;}}
+.flag-lightning{{background:#FEF3C7;color:#F59E0B;}}
 .wim-accum{{background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:14px 10px;text-align:center;height:100%;}}
 .wim-accum-period{{font-size:0.62rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#94A3B8;}}
 .wim-accum-val{{font-size:1.35rem;font-weight:700;color:#1A1A2E;margin:4px 0 2px;}}
@@ -326,7 +328,13 @@ VIS_STOP     = 0.5
 RAIN_MOD     = 1.5
 RAIN_HEAVY   = 5.0
 
-API_WEIGHTS = {"accuweather": 0.35, "open_meteo": 0.30, "openweather": 0.25, "tomorrow_io": 0.10, "imd": 0.10}
+API_WEIGHTS = {
+    "accuweather": 0.40,  # Most reliable for rain type descriptions
+    "open_meteo": 0.25,   # Good for overall patterns
+    "openweather": 0.20,    # Moderate reliability
+    "tomorrow_io": 0.10,    # Good for short-term
+    "imd": 0.05             # Local but limited coverage
+}
 
 # ══════════════════════════════════════════════════════════════
 # SITE MANAGEMENT — Supabase-first, JSON fallback
@@ -472,28 +480,53 @@ def mining_impact_html(mm, wind, vis, lightning):
 
 def condition_str(total, descs, max_pop=0):
     # Smart logic: Consider both rainfall amount AND probability
-    # Low probability rain should not be classified as heavy
+    # Prioritize API weather descriptions for rain type
+    
+    # Analyze weather descriptions from multiple sources
+    rain_types = []
+    if descs:
+        for desc in descs:
+            desc_lower = desc.lower()
+            if any(word in desc_lower for word in ["heavy", "torrential", "downpour", "storm", "thunderstorm"]):
+                rain_types.append("heavy")
+            elif any(word in desc_lower for word in ["moderate", "steady", "continuous"]):
+                rain_types.append("moderate")
+            elif any(word in desc_lower for word in ["light", "light rain", "shower", "showers"]):
+                rain_types.append("light")
+            elif any(word in desc_lower for word in ["drizzle", "mist", "sprinkle"]):
+                rain_types.append("drizzle")
+    
+    # Get most common rain type from APIs
+    api_rain_type = collections.Counter(rain_types).most_common(1)[0][0] if rain_types else None
     
     # High rainfall with decent probability
-    if total >= 15 and max_pop >= 25: return "Heavy Rain"
+    if total >= 15 and max_pop >= 25: 
+        return "Heavy Rain"
     # High rainfall but very low probability - downgrade
-    elif total >= 15 and max_pop < 25: return "Moderate Rain"
+    elif total >= 15 and max_pop < 25: 
+        return "Moderate Rain"
     # Moderate rainfall with decent probability
-    elif total >= 5 and max_pop >= 35: return "Moderate Rain"
+    elif total >= 5 and max_pop >= 35: 
+        return "Moderate Rain"
     # Moderate rainfall but low probability - downgrade
-    elif total >= 5 and max_pop < 35: return "Light Rain"
+    elif total >= 5 and max_pop < 35: 
+        return "Light Rain"
     # Light rainfall with decent probability
-    elif total >= 1.5 and max_pop >= 45: return "Light Rain"
+    elif total >= 1.5 and max_pop >= 45: 
+        return "Light Rain"
     # Light rainfall but low probability - downgrade to drizzle
-    elif total >= 1.5 and max_pop < 45: return "Drizzle"
-    elif total > 0:   return "Drizzle"
+    elif total >= 1.5 and max_pop < 45: 
+        return "Drizzle"
+    elif total > 0: 
+        return "Drizzle"
     
-    # Check weather descriptions as backup
-    if descs:
-        t = collections.Counter(descs).most_common(1)[0][0].lower()
-        if "heavy" in t or "storm" in t: return "Heavy Rain"
-        if "moderate" in t or "rain" in t: return "Moderate Rain"
-        if "light" in t or "drizzle" in t: return "Light Rain"
+    # Use API descriptions as primary source when no rain
+    if api_rain_type:
+        if api_rain_type == "heavy": return "Heavy Rain"
+        if api_rain_type == "moderate": return "Moderate Rain"
+        if api_rain_type == "light": return "Light Rain"
+        if api_rain_type == "drizzle": return "Drizzle"
+    
     return "Clear"
 
 # ══════════════════════════════════════════════════════════════
@@ -710,32 +743,48 @@ def build_forecast(lat, lon, days=7):
     for hk in sorted(raw.keys()):
         srcs = raw[hk]
         def wavg(field):
-            pairs = [(d[field], API_WEIGHTS.get(src, 0.1)) for src, d in srcs.items()]
-            tw    = sum(w for _, w in pairs)
-            return sum(v * w for v, w in pairs) / tw if tw else 0.0
+            total_weight = sum(API_WEIGHTS.get(src, 0) for src in srcs.keys())
+            if total_weight == 0:
+                return sum(d[field] for d in srcs.values()) / len(srcs) if srcs else 0
+            
+            weighted_sum = sum(d[field] * API_WEIGHTS.get(src, 0) for src, d in srcs.items())
+            return weighted_sum / total_weight
+        
         def wavg_vis():
-            """Weighted average for visibility, filtering out anomalously low values."""
-            pairs = [(d["vis"], API_WEIGHTS.get(src, 0.1)) for src, d in srcs.items() if d["vis"] >= 0.5]
-            tw = sum(w for _, w in pairs)
-            result = sum(v * w for v, w in pairs) / tw if tw else 10.0
-            return max(0.5, result)
-        rain_vals = [d["rain"] for d in srcs.values() if d["rain"] > 0.2]
+            total_weight = sum(API_WEIGHTS.get(src, 0) for src in srcs.keys())
+            if total_weight == 0:
+                return sum(d["vis"] for d in srcs.values()) / len(srcs) if srcs else 10
+            
+            weighted_sum = sum(d["vis"] * API_WEIGHTS.get(src, 0) for src, d in srcs.items())
+            return weighted_sum / total_weight
+        
+        rain_vals = [d["rain"] for d in srcs.values()]
+        if len(rain_vals) >= 3:
+            median_rain = sorted(rain_vals)[len(rain_vals)//2]
+            rain_vals = [r for r in rain_vals if r <= median_rain * 3]
+        
         rain_out  = wavg("rain") if len(rain_vals) >= 2 else (rain_vals[0] * 0.5 if len(rain_vals) == 1 else 0.0)
         pop_raw   = wavg("pop")
         pop_out   = pop_raw if rain_out > 0 or pop_raw >= 40 else pop_raw * 0.5
-        descs     = [d["desc"] for d in srcs.values() if d["desc"]]
-        best      = collections.Counter(descs).most_common(1)[0][0] if descs else ""
+        
+        descs = [d["desc"] for d in srcs.values() if d["desc"]]
+        best_desc = ""
+        if descs:
+            if "accuweather" in srcs and srcs["accuweather"]["desc"]:
+                best_desc = srcs["accuweather"]["desc"]
+            else:
+                best_desc = collections.Counter(descs).most_common(1)[0][0]
+        
         final.append((hk, {
             "temp": round(wavg("temp"), 1), "rain_mm": round(rain_out, 2),
             "pop": round(pop_out, 1), "wind_kmh": round(wavg("wind"), 1),
             "vis_km": round(wavg_vis(), 1), "humidity": round(wavg("hum"), 1),
             "lightning": any(d["lightning"] for d in srcs.values()),
-            "desc": best, "n_sources": len(srcs)}))
+            "desc": best_desc, "n_sources": len(srcs)}))
 
     by_day = collections.defaultdict(list)
     for hk, d in final: by_day[hk.date()].append((hk, d))
     
-    # Deduplicate: keep only first occurrence of each hour
     for date_key in by_day:
         seen = set()
         deduplicated = []
@@ -1113,10 +1162,18 @@ def render_weekly(by_day, days):
             continue
         s    = day_summary(by_day[d]); sl = s["slabs"]
         rain = s["total_rain"]; has_l = any(x["lightning"] for x in sl)
-        if rain >= 15 or has_l:                           flag, fcss = "Heavy Rain", "flag-heavy"
-        elif rain >= 5 or s["max_wind"] >= WIND_CAUTION:  flag, fcss = "Moderate Risk", "flag-moderate"
-        elif rain >= 1.5:                                 flag, fcss = "Light Rain", "flag-light"
-        else:                                             flag, fcss = "Clear", "flag-clear"
+        max_pop = s["max_pop"]
+        
+        # Use smart rain classification with probability (same as condition_str logic)
+        if rain >= 15 and max_pop >= 25:             flag, fcss = "Heavy Rain", "flag-heavy"
+        elif rain >= 15 and max_pop < 25:           flag, fcss = "Moderate Risk", "flag-moderate"
+        elif rain >= 5 and max_pop >= 35:            flag, fcss = "Moderate Risk", "flag-moderate"
+        elif rain >= 5 and max_pop < 35:              flag, fcss = "Light Rain", "flag-light"
+        elif rain >= 1.5 and max_pop >= 45:          flag, fcss = "Light Rain", "flag-light"
+        elif rain >= 1.5 and max_pop < 45:           flag, fcss = "Drizzle", "flag-drizzle"
+        elif rain > 0:                                flag, fcss = "Drizzle", "flag-drizzle"
+        elif has_l:                                  flag, fcss = "Lightning Risk", "flag-lightning"
+        else:                                         flag, fcss = "Clear", "flag-clear"
         day_css = "wim-day wim-day-active" if i == 0 else "wim-day"
         cols[i].markdown(f"""<div class="{day_css}">
             <div class="wim-day-label">{lbl}</div>
