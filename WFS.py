@@ -778,37 +778,15 @@ def build_forecast(lat, lon, days=7):
         # Get rain values with quality check
         rain_vals = [d["rain"] for d in srcs.values()]
         
-        # Conservative rain aggregation with probability validation
+        # Simple rain aggregation - use median to prevent inflation
         if len(rain_vals) >= 2:
-            # Take median but validate against probability
-            median_rain = sorted(rain_vals)[len(rain_vals)//2]
-            avg_pop = wavg("pop")
-            
-            # If probability is very low, rainfall should be low too
-            if avg_pop < 20 and median_rain > 1.0:
-                rain_out = median_rain * 0.3  # Scale down rain for low probability
-            elif avg_pop < 35 and median_rain > 2.0:
-                rain_out = median_rain * 0.5  # Scale down rain for low probability
-            else:
-                rain_out = median_rain
+            rain_out = sorted(rain_vals)[len(rain_vals)//2]
         elif len(rain_vals) == 1:
-            single_pop = wavg("pop")
-            if single_pop < 20 and rain_vals[0] > 1.0:
-                rain_out = rain_vals[0] * 0.3
-            elif single_pop < 35 and rain_vals[0] > 2.0:
-                rain_out = rain_vals[0] * 0.5
-            else:
-                rain_out = rain_vals[0]
+            rain_out = rain_vals[0]
         else:
             rain_out = 0.0
-        pop_raw   = wavg("pop")
-        # Conservative probability handling for clear weather
-        if rain_out < 0.1:  # Essentially no rain
-            pop_out = pop_raw * 0.2  # Heavily reduce probability for clear conditions
-        elif rain_out < 0.5:  # Very light rain
-            pop_out = pop_raw * 0.5  # Reduce probability for very light rain
-        else:
-            pop_out = pop_raw
+        pop_raw = wavg("pop")
+        pop_out = pop_raw
         
         descs = [d["desc"] for d in srcs.values() if d["desc"]]
         best_desc = ""
