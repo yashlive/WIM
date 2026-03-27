@@ -882,28 +882,24 @@ def day_summary(hourly, mine_type="Coal Open Cast Mine"):
     # Mine-specific validation
     is_iron_ore = "Iron Ore" in mine_type
     
-    temps  = [d["temp"] for _, d in hourly if -50 <= d["temp"] <= 60]  # Valid temp range
-    rains  = [d["rain_mm"] for _, d in hourly if 0 <= d["rain_mm"] <= 100]  # Valid rain range
-    pops   = [d["pop"] for _, d in hourly if 0 <= d["pop"] <= 100]  # Valid probability range
-    winds  = [d["wind_kmh"] for _, d in hourly if 0 <= d["wind_kmh"] <= 200]  # Valid wind range
-    viss   = [d["vis_km"] for _, d in hourly if 0.1 <= d["vis_km"] <= 50]  # Valid visibility range
-    hums   = [d["humidity"] for _, d in hourly if 0 <= d["humidity"] <= 100]  # Valid humidity range
+    temps  = [d["temp"] for _, d in hourly]
+    rains  = [d["rain_mm"] for _, d in hourly]
+    pops   = [d["pop"] for _, d in hourly]
+    winds  = [d["wind_kmh"] for _, d in hourly]
+    viss   = [d["vis_km"] for _, d in hourly]
+    hums   = [d["humidity"] for _, d in hourly]
     
     total  = round(sum(rains), 1)
     descs  = [d["desc"] for _, d in hourly if d["desc"]]
     
-    # Mine-specific adjustments
-    if not viss:  # If no valid visibility data
-        min_vis = 10  # Default clear day visibility
-    else:
-        min_vis = round(min(viss), 1)
-    
     return dict(
-        max_temp=round(max(temps), 1), min_temp=round(min(temps), 1),
+        max_temp=round(max(temps), 1) if temps else "—", 
+        min_temp=round(min(temps), 1) if temps else "—",
         total_rain=total, max_pop=int(round(max(pops), 0)),
         condition=condition_str(total, descs, max(pops)),
         humidity=round(sum(hums) / len(hums), 1) if hums else 0,
-        max_wind=round(max(winds), 1), min_vis=min_vis,
+        max_wind=round(max(winds), 1), 
+        min_vis=round(min(viss), 1) if viss else 10,
         slabs=build_slabs(hourly))
 
 # ══════════════════════════════════════════════════════════════
@@ -1525,21 +1521,26 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
             st.markdown('<div class="wim-section">Radar — Next 2 Hours (MinuteCast)</div>', unsafe_allow_html=True)
             render_mc(mc_data)
 
-        # Rain Accumulation
+        # Rain Accumulation - only show if there's precipitation expected
         acc = rain_accum(dh, target_day=tday)
         pfx = "Next" if tday == today else "First"
-        st.markdown(f'<div class="wim-section">Rainfall Accumulation{"" if tday == today else " — From Midnight"}</div>', unsafe_allow_html=True)
-        acols = st.columns(5)
-        for idx, h in enumerate([2, 4, 6, 12, 24]):
-            mm, pop = acc[h]
-            css, risk, rc = (("acc-high", "High Risk", "risk-high") if mm >= 15 else
-                             ("acc-watch", "Monitor", "risk-watch") if mm >= 5 else
-                             ("acc-safe", "Safe", "risk-safe"))
-            acols[idx].markdown(
-                f'<div class="wim-accum {css}"><div class="wim-accum-period">{pfx} {h}h</div>'
-                f'<div class="wim-accum-val">{mm} mm</div>'
-                f'<div class="wim-accum-pop">{pop}% probability</div>'
-                f'<div class="wim-accum-risk {rc}">{risk}</div></div>', unsafe_allow_html=True)
+        
+        # Check if any accumulation has rain
+        has_rain = any(acc[h][0] > 0 for h in [2, 4, 6, 12, 24])
+        
+        if has_rain:
+            st.markdown(f'<div class="wim-section">Rainfall Accumulation{"" if tday == today else " — From Midnight"}</div>', unsafe_allow_html=True)
+            acols = st.columns(5)
+            for idx, h in enumerate([2, 4, 6, 12, 24]):
+                mm, pop = acc[h]
+                css, risk, rc = (("acc-high", "High Risk", "risk-high") if mm >= 15 else
+                                 ("acc-watch", "Monitor", "risk-watch") if mm >= 5 else
+                                 ("acc-safe", "Safe", "risk-safe"))
+                acols[idx].markdown(
+                    f'<div class="wim-accum {css}"><div class="wim-accum-period">{pfx} {h}h</div>'
+                    f'<div class="wim-accum-val">{mm} mm</div>'
+                    f'<div class="wim-accum-pop">{pop}% probability</div>'
+                    f'<div class="wim-accum-risk {rc}">{risk}</div></div>', unsafe_allow_html=True)
 
         # 2-Hour Slab Windows
         st.markdown('<div class="wim-section">2-Hour Precipitation Windows</div>', unsafe_allow_html=True)
