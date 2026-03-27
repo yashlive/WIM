@@ -754,31 +754,30 @@ def build_forecast(lat, lon, days=7):
     for hk in sorted(raw.keys()):
         srcs = raw[hk]
         def wavg(field):
-            total_weight = sum(API_WEIGHTS.get(src, 0) for src in srcs.keys())
-            if total_weight == 0:
-                return sum(d[field] for d in srcs.values()) / len(srcs) if srcs else 0
-            
-            weighted_sum = sum(d[field] * API_WEIGHTS.get(src, 0) for src, d in srcs.items())
-            return weighted_sum / total_weight
-        
-        def wavg_vis():
-            total_weight = sum(API_WEIGHTS.get(src, 0) for src in srcs.keys())
-            if total_weight == 0:
-                return sum(d["vis"] for d in srcs.values()) / len(srcs) if srcs else 10
-            
-            # Filter out zero visibility values (API errors)
-            valid_vis = [(d["vis"], API_WEIGHTS.get(src, 0)) for src, d in srcs.items() if d["vis"] > 0]
+            # Only filter out obviously wrong values (0km during day)
+            current_hour = now_ist().hour
+            valid_vis = [(d["vis"], API_WEIGHTS.get(src, 0)) for src, d in srcs.items() 
+                       if d["vis"] > 0 or (d["vis"] == 0 and 20 <= current_hour <= 6)]  # Allow 0vis for night 8PM-6AM
             if not valid_vis:
-                return 10  # Default visibility if all sources report 0
+                return 10  # Default visibility
             
             weighted_sum = sum(vis * weight for vis, weight in valid_vis)
             total_weight = sum(weight for _, weight in valid_vis)
             return weighted_sum / total_weight
         
-        # Get rain values with quality check
+        def wavg_vis():
+            # Only filter out obviously wrong values (0km during day)
+            current_hour = now_ist().hour
+            valid_vis = [(d["vis"], API_WEIGHTS.get(src, 0)) for src, d in srcs.items() 
+                       if d["vis"] > 0 or (d["vis"] == 0 and 20 <= current_hour <= 6)]  # Allow 0vis for night 8PM-6AM
+            if not valid_vis:
+                return 10  # Default visibility
+            
+            weighted_sum = sum(vis * weight for vis, weight in valid_vis)
+            total_weight = sum(weight for _, weight in valid_vis)
+            return weighted_sum / total_weight
+
         rain_vals = [d["rain"] for d in srcs.values()]
-        
-        # Simple rain aggregation - use median to prevent inflation
         if len(rain_vals) >= 2:
             rain_out = sorted(rain_vals)[len(rain_vals)//2]
         elif len(rain_vals) == 1:
