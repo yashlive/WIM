@@ -854,7 +854,7 @@ def get_current_slabs():
 def build_slabs(hourly):
     raw = collections.defaultdict(lambda: dict(rain=0, pop=[], wind=[], vis=[], lightning=[], hum=[], count=0))
     for hk, d in hourly:
-        sk = hour_to_slab_dynamic(hk.hour)
+        sk = get_current_slabs()
         if not sk: continue
         r = raw[sk]
         r["rain"] += d["rain_mm"]; r["pop"].append(d["pop"])
