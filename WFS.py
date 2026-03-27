@@ -323,8 +323,8 @@ RETRY_MAX = 3
 
 WIND_CAUTION = 30
 WIND_STOP    = 32
-VIS_CAUTION  = 1.0
-VIS_STOP     = 0.5
+VIS_CAUTION  = 5.0  # 5km visibility is concerning
+VIS_STOP     = 2.0  # 2km visibility is dangerous
 RAIN_MOD     = 1.5
 RAIN_HEAVY   = 5.0
 
@@ -532,6 +532,7 @@ def condition_str(total, descs, max_pop=0):
 # ══════════════════════════════════════════════════════════════
 # API FETCHES
 # ══════════════════════════════════════════════════════════════
+# OpenWeather API
 @st.cache_data(ttl=1800)
 def fetch_openweather(lat, lon):
     if not OPENWEATHER_KEY: return None, "no key"
@@ -539,7 +540,18 @@ def fetch_openweather(lat, lon):
         r = requests.get(
             f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}"
             f"&units=metric&exclude=minutely,daily,alerts&appid={OPENWEATHER_KEY}", timeout=TIMEOUT)
-        r.raise_for_status(); return r.json(), None
+        r.raise_for_status(); data = r.json()
+        
+        for h in data.get("hourly", []):
+            dt = datetime.fromtimestamp(h["dt"], tz=UTC)
+            hk = utc_to_ist(dt).replace(minute=0, second=0, microsecond=0)
+            add(hk, "openweather", h["temp"], 
+                h.get("rain", {}).get("1h", 0), h.get("pop", 0) * 100,
+                h["wind_speed"] * 3.6, h.get("visibility", 10000) / 1000 if h.get("visibility") != 10000 else 10,
+                200 <= h.get("weather", [{}])[0].get("id", 0) < 300,
+                h["weather"][0]["description"] if h.get("weather") else "",
+                h.get("humidity", 0))
+        return data, None
     except Exception as e: return None, str(e)
 
 @st.cache_data(ttl=1800)
@@ -692,13 +704,11 @@ def build_forecast(lat, lon, days=7):
         hum = h.get("relative_humidity_2m", [])
         for i, ts in enumerate(h["time"]):
             hk = datetime.fromisoformat(ts).replace(tzinfo=IST).replace(minute=0, second=0, microsecond=0)
-            vis_km = max(1.0, vis[i]/1000) if vis and i < len(vis) and vis[i] > 100 else 10.0
-            add(hk, "open_meteo",
-                h["temperature_2m"][i], h["precipitation"][i],
-                h["precipitation_probability"][i], h["wind_speed_10m"][i],
-                vis_km,
-                h["weather_code"][i] in [95, 96, 99], "",
-                hum[i] if hum else 0)
+            add(hk, "open_meteo", h["temperature_2m"][i],
+                h["precipitation"][i], h["precipitation_probability"][i],
+                h["wind_speed_10m"][i],
+                vis[i] / 1000 if i < len(vis) and vis[i] is not None else 10,
+                False, "", hum[i] if i < len(hum) else 0)
 
     if tm and "timelines" in tm and "hourly" in tm["timelines"]:
         for iv in tm["timelines"]["hourly"]:
@@ -708,7 +718,8 @@ def build_forecast(lat, lon, days=7):
             v  = iv["values"]
             add(hk, "tomorrow_io", v.get("temperature", 0),
                 v.get("precipitationIntensity", 0), v.get("precipitationProbability", 0),
-                v.get("windSpeed", 0) * 3.6, v.get("visibility", 10000) / 1000,
+                v.get("windSpeed", 0) * 3.6, 
+                v.get("visibility", 10000) / 1000 if v.get("visibility") not in [None, 10000] else 10,
                 v.get("lightningStrikeCount", 0) > 0 or v.get("weatherCode") == 8000, "",
                 v.get("humidity", 0))
 
@@ -755,17 +766,46 @@ def build_forecast(lat, lon, days=7):
             if total_weight == 0:
                 return sum(d["vis"] for d in srcs.values()) / len(srcs) if srcs else 10
             
-            weighted_sum = sum(d["vis"] * API_WEIGHTS.get(src, 0) for src, d in srcs.items())
+            # Filter out zero visibility values (API errors)
+            valid_vis = [(d["vis"], API_WEIGHTS.get(src, 0)) for src, d in srcs.items() if d["vis"] > 0]
+            if not valid_vis:
+                return 10  # Default visibility if all sources report 0
+            
+            weighted_sum = sum(vis * weight for vis, weight in valid_vis)
+            total_weight = sum(weight for _, weight in valid_vis)
             return weighted_sum / total_weight
         
-        rain_vals = [d["rain"] for d in srcs.values()]
-        if len(rain_vals) >= 3:
+        # Conservative rain aggregation with probability validation
+        if len(rain_vals) >= 2:
+            # Take median but validate against probability
             median_rain = sorted(rain_vals)[len(rain_vals)//2]
-            rain_vals = [r for r in rain_vals if r <= median_rain * 3]
-        
-        rain_out  = wavg("rain") if len(rain_vals) >= 2 else (rain_vals[0] * 0.5 if len(rain_vals) == 1 else 0.0)
+            avg_pop = wavg("pop")
+            
+            # If probability is very low, rainfall should be low too
+            if avg_pop < 20 and median_rain > 1.0:
+                rain_out = median_rain * 0.3  # Scale down rain for low probability
+            elif avg_pop < 35 and median_rain > 2.0:
+                rain_out = median_rain * 0.5  # Scale down rain for low probability
+            else:
+                rain_out = median_rain
+        elif len(rain_vals) == 1:
+            single_pop = wavg("pop")
+            if single_pop < 20 and rain_vals[0] > 1.0:
+                rain_out = rain_vals[0] * 0.3
+            elif single_pop < 35 and rain_vals[0] > 2.0:
+                rain_out = rain_vals[0] * 0.5
+            else:
+                rain_out = rain_vals[0]
+        else:
+            rain_out = 0.0
         pop_raw   = wavg("pop")
-        pop_out   = pop_raw if rain_out > 0 or pop_raw >= 40 else pop_raw * 0.5
+        # Conservative probability handling for clear weather
+        if rain_out < 0.1:  # Essentially no rain
+            pop_out = pop_raw * 0.2  # Heavily reduce probability for clear conditions
+        elif rain_out < 0.5:  # Very light rain
+            pop_out = pop_raw * 0.5  # Reduce probability for very light rain
+        else:
+            pop_out = pop_raw
         
         descs = [d["desc"] for d in srcs.values() if d["desc"]]
         best_desc = ""
@@ -833,24 +873,36 @@ def build_slabs(hourly):
     slabs.sort(key=lambda x: x["sort"])
     return slabs
 
-def day_summary(hourly):
+def day_summary(hourly, mine_type="Coal Open Cast Mine"):
     if not hourly:
         return dict(max_temp="—", min_temp="—", total_rain=0, max_pop=0,
                     condition="—", humidity=0, slabs=[], max_wind=0, min_vis=10)
-    temps  = [d["temp"] for _, d in hourly]
-    rains  = [d["rain_mm"] for _, d in hourly]
-    pops   = [d["pop"] for _, d in hourly]
-    hums   = [d["humidity"] for _, d in hourly]
-    winds  = [d["wind_kmh"] for _, d in hourly]
-    viss   = [d["vis_km"] for _, d in hourly]
+    
+    # Mine-specific validation
+    is_iron_ore = "Iron Ore" in mine_type
+    
+    temps  = [d["temp"] for _, d in hourly if -50 <= d["temp"] <= 60]  # Valid temp range
+    rains  = [d["rain_mm"] for _, d in hourly if 0 <= d["rain_mm"] <= 100]  # Valid rain range
+    pops   = [d["pop"] for _, d in hourly if 0 <= d["pop"] <= 100]  # Valid probability range
+    winds  = [d["wind_kmh"] for _, d in hourly if 0 <= d["wind_kmh"] <= 200]  # Valid wind range
+    viss   = [d["vis_km"] for _, d in hourly if 0.1 <= d["vis_km"] <= 50]  # Valid visibility range
+    hums   = [d["humidity"] for _, d in hourly if 0 <= d["humidity"] <= 100]  # Valid humidity range
+    
     total  = round(sum(rains), 1)
     descs  = [d["desc"] for _, d in hourly if d["desc"]]
+    
+    # Mine-specific adjustments
+    if not viss:  # If no valid visibility data
+        min_vis = 10  # Default clear day visibility
+    else:
+        min_vis = round(min(viss), 1)
+    
     return dict(
         max_temp=round(max(temps), 1), min_temp=round(min(temps), 1),
         total_rain=total, max_pop=int(round(max(pops), 0)),
         condition=condition_str(total, descs, max(pops)),
         humidity=round(sum(hums) / len(hums), 1) if hums else 0,
-        max_wind=round(max(winds), 1), min_vis=round(min(viss), 1),
+        max_wind=round(max(winds), 1), min_vis=min_vis,
         slabs=build_slabs(hourly))
 
 # ══════════════════════════════════════════════════════════════
@@ -1151,7 +1203,7 @@ def render_hourly_graph(hourly, target_day):
 # ══════════════════════════════════════════════════════════════
 # 7-DAY STRIP
 # ══════════════════════════════════════════════════════════════
-def render_weekly(by_day, days):
+def render_weekly(by_day, days, site_type="Coal Open Cast Mine"):
     today = now_ist().date()
     cols  = st.columns(min(days, 7))
     for i in range(min(days, 7)):
@@ -1160,7 +1212,7 @@ def render_weekly(by_day, days):
         if d not in by_day:
             cols[i].markdown(f'<div class="wim-day"><div class="wim-day-label">{lbl}</div><div class="wim-day-date">{d.strftime("%d %b")}</div><div style="color:#94A3B8;font-size:0.75rem;margin-top:8px;">No data</div></div>', unsafe_allow_html=True)
             continue
-        s    = day_summary(by_day[d]); sl = s["slabs"]
+        s    = day_summary(by_day[d], site_type); sl = s["slabs"]
         rain = s["total_rain"]; has_l = any(x["lightning"] for x in sl)
         max_pop = s["max_pop"]
         
@@ -1430,7 +1482,7 @@ today_h = by_day.get(today, [])
 
 # ── 7-Day Outlook ──
 st.markdown('<div class="wim-section">7-Day Outlook</div>', unsafe_allow_html=True)
-render_weekly(by_day, days)
+render_weekly(by_day, days, site.get("type", "Coal Open Cast Mine"))
 st.markdown('<hr class="wim-hr">', unsafe_allow_html=True)
 
 # ── Day-wise tabs ──
