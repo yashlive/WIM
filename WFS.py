@@ -559,7 +559,7 @@ def fetch_open_meteo(lat, lon, days=7):
     url = (
         f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
         f"&hourly=temperature_2m,precipitation,weather_code,wind_speed_10m,"
-        f"precipitation_probability,visibility,relative_humidity_2m"
+        f"precipitation_probability,visibility,relative_humidity_2m,cloudcover"
         f"&forecast_days={days}&timezone=Asia%2FKolkata"
     )
     last_err = "unknown"
@@ -661,13 +661,13 @@ def build_forecast(lat, lon, days=7):
     cutoff = now_h + timedelta(days=days)
     raw    = {}
 
-    def add(hk, src, temp, rain, pop, wind, vis, lightning, desc, hum=0):
+    def add(hk, src, temp, rain, pop, wind, vis, lightning, desc, hum=0, cloud=0):
         if hk < now_h - timedelta(hours=1) or hk > cutoff: return
         raw.setdefault(hk, {})
         raw[hk][src] = dict(temp=temp, rain=max(0.0, float(rain or 0)),
                             pop=float(pop or 0), wind=float(wind or 0),
                             vis=float(vis or 10), lightning=bool(lightning),
-                            desc=str(desc or ""), hum=float(hum or 0))
+                            desc=str(desc or ""), hum=float(hum or 0), cloud=float(cloud or 0))
 
     if imd:
         try:
@@ -702,13 +702,14 @@ def build_forecast(lat, lon, days=7):
         h   = om["hourly"]
         vis = h.get("visibility", [])
         hum = h.get("relative_humidity_2m", [])
+        cloud = h.get("cloudcover", [])
         for i, ts in enumerate(h["time"]):
             hk = datetime.fromisoformat(ts).replace(tzinfo=IST).replace(minute=0, second=0, microsecond=0)
             add(hk, "open_meteo", h["temperature_2m"][i],
                 h["precipitation"][i], h["precipitation_probability"][i],
                 h["wind_speed_10m"][i],
                 vis[i] / 1000 if i < len(vis) and vis[i] is not None else 10,
-                False, "", hum[i] if i < len(hum) else 0)
+                False, "", hum[i] if i < len(hum) else 0, cloud[i] if i < len(cloud) else 0)
 
     if tm and "timelines" in tm and "hourly" in tm["timelines"]:
         for iv in tm["timelines"]["hourly"]:
@@ -796,6 +797,7 @@ def build_forecast(lat, lon, days=7):
             "temp": round(wavg("temp"), 1), "rain_mm": round(rain_out, 2),
             "pop": round(pop_out, 1), "wind_kmh": round(wavg("wind"), 1),
             "vis_km": round(wavg_vis(), 1), "humidity": round(wavg("hum"), 1),
+            "cloud": round(wavg("cloud"), 0),
             "lightning": any(d["lightning"] for d in srcs.values()),
             "desc": best_desc, "n_sources": len(srcs)}))
 
@@ -1066,7 +1068,7 @@ def render_hourly_table(hourly, target_day):
         seen_hours.add(h_key)
         if target_day == today and hk < ist_now_h: continue
         mm    = d["rain_mm"]; wind = d["wind_kmh"]; vis = d["vis_km"]
-        pop   = d["pop"]; temp = d["temp"]; hum = d["humidity"]; light = d["lightning"]
+        pop   = d["pop"]; temp = d["temp"]; hum = d["humidity"]; light = d["lightning"]; cloud = d.get("cloud", 0)
         h_lbl = hk.strftime("%I:%M %p")
 
         if light or mm >= RAIN_HEAVY or vis <= VIS_STOP or wind >= WIND_STOP:
@@ -1081,11 +1083,12 @@ def render_hourly_table(hourly, target_day):
         wind_td = f'<td class="td-alert">{wind} km/h</td>' if wind >= WIND_STOP else (f'<td class="td-warn">{wind} km/h</td>' if wind >= WIND_CAUTION else f'<td>{wind} km/h</td>')
         vis_td  = f'<td class="td-alert">{vis} km</td>' if vis <= VIS_STOP else (f'<td class="td-warn">{vis} km</td>' if vis <= VIS_CAUTION else f'<td>{vis} km</td>')
         pop_td  = f'<td class="td-alert">{pop}%</td>' if pop >= 70 else (f'<td class="td-warn">{pop}%</td>' if pop >= 40 else f'<td>{pop}%</td>')
+        cloud_td = f'<td style="color:#64748B;">{int(cloud)}%</td>' if cloud else '<td style="color:#94A3B8;">—</td>'
         l_td    = '<td class="td-alert"><span class="wim-badge b-lightning">⚡ Alert</span></td>' if light else '<td style="color:#94A3B8;">—</td>'
         impact  = mining_impact_html(mm, wind, vis, light)
 
         rows += (f"<tr{row_cls}><td style='font-weight:700;color:#334155;white-space:nowrap;'>{h_lbl}</td>"
-                 f"<td>{rain_badge_html(mm)}</td>{pop_td}<td>{temp}°C</td><td>{hum}%</td>"
+                 f"<td>{rain_badge_html(mm)}</td>{pop_td}<td>{temp}°C</td><td>{hum}%</td>{cloud_td}"
                  f"{wind_td}{vis_td}{l_td}<td>{impact}</td></tr>")
 
     if not rows:
@@ -1095,7 +1098,7 @@ def render_hourly_table(hourly, target_day):
     st.markdown(
         '<div style="overflow-x:auto;">'
         '<table class="wim-table"><thead><tr>'
-        '<th>Hour</th><th>Rainfall</th><th>Rain Prob.</th><th>Temp</th><th>Humidity</th>'
+        '<th>Hour</th><th>Rainfall</th><th>Rain Prob.</th><th>Temp</th><th>Humidity</th><th>Cloud</th>'
         '<th>Wind</th><th>Visibility</th><th>Lightning</th><th>Mining Impact</th>'
         '</tr></thead><tbody>' + rows + '</tbody></table></div>',
         unsafe_allow_html=True)
