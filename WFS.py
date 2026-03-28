@@ -1007,12 +1007,10 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
             parts.append("Plan coal loading and dispatch in the pre-rain dry window. Allow 1–2 hours post-rain drainage assessment before resuming heavy equipment on active benches. Check blast hole integrity before charging.")
         else:
             parts.append("Plan ore loading and dispatch in the pre-rain dry window. Allow 1–2 hours post-rain drainage assessment before resuming heavy equipment on active benches. Check blast hole integrity before charging.")
-    elif rain_sl and pop > 0:
+    elif rain_sl and pop >= 15:
         first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]; fp = rain_sl[0]["pop"]
         parts.append(f"Light rainfall of {rain} mm is expected between {first} and {last}.")
-        if pop < 15:
-            parts.append("Intermittent drizzle expected. Surface impact minimal — operations can continue with standard wet-weather protocols.")
-        elif pop < 35:
+        if pop < 35:
             parts.append(f"Low probability ({pop}%) indicates intermittent drizzle. Surface impact minimal — operations can continue with standard wet-weather protocols.")
         elif pop > 60:
             parts.append(f"Moderate-to-high probability ({pop}%) suggests sustained light rain. Expect haul road surface degradation — deploy grader for maintenance.")
@@ -1474,7 +1472,7 @@ def render_weekly(by_day, days, site_type="Coal Open Cast Mine"):
         elif rain >= 5 and max_pop < 35:              flag, fcss = "Light Rain", "flag-light"
         elif rain >= 1.5 and max_pop >= 45:          flag, fcss = "Light Rain", "flag-light"
         elif rain >= 1.5 and max_pop < 45:           flag, fcss = "Drizzle", "flag-drizzle"
-        elif rain > 0:                                flag, fcss = "Drizzle", "flag-drizzle"
+        elif rain > 0 and max_pop >= 15:          flag, fcss = "Drizzle", "flag-drizzle"
         elif has_l:                                  flag, fcss = "Lightning Risk", "flag-lightning"
         else:                                         flag, fcss = "Clear", "flag-clear"
         day_css = "wim-day wim-day-active" if i == 0 else "wim-day"
@@ -1482,7 +1480,7 @@ def render_weekly(by_day, days, site_type="Coal Open Cast Mine"):
             <div class="wim-day-label">{lbl}</div>
             <div class="wim-day-date">{d.strftime('%d %b')}</div>
             <div class="wim-day-cond">{s['condition']}</div>
-            <div class="wim-day-rain">{rain} mm{f" · {s['max_pop']}%" if rain > 0 and s['max_pop'] >= 15 else ""}</div>
+            <div class="wim-day-rain">{f"{rain} mm" if rain > 0 and s['max_pop'] >= 15 else "0.0 mm"}{f" · {s['max_pop']}%" if rain > 0 and s['max_pop'] >= 15 else ""}</div>
             <div class="wim-day-temp">{s['max_temp']}° / {s['min_temp']}°C</div>
             <span class="wim-day-flag {fcss}">{flag}</span>
         </div>""", unsafe_allow_html=True)
@@ -1821,10 +1819,12 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         # Summary Metrics
         mcols = st.columns(7)
         cloud_val = f"{int(ds['cloud'])}%" if ds.get('cloud') else "—"
+        # Only show rain metrics if probability is meaningful
+        show_rain_metrics = rain_t > 0 and ds['max_pop'] >= 15
         for col, (lbl, val) in zip(mcols, [
             ("Condition", ds["condition"]), ("Max Temp", f"{ds['max_temp']}°C"),
-            ("Min Temp", f"{ds['min_temp']}°C"), ("Total Rain", f"{ds['total_rain']} mm"),
-            ("Rain Prob.", f"{ds['max_pop']}%" if ds['max_pop'] >= 15 else "—"), ("Wind", f"{ds['avg_wind']} km/h"),
+            ("Min Temp", f"{ds['min_temp']}°C"),            ("Total Rain", f"{rain_t} mm" if show_rain_metrics else "0 mm"),
+            ("Rain Prob.", f"{ds['max_pop']}%" if show_rain_metrics else "—"), ("Wind", f"{ds['avg_wind']} km/h"),
             ("Cloud Cover", cloud_val),
         ]):
             col.markdown(f'<div class="wim-metric"><div class="wim-metric-label">{lbl}</div><div class="wim-metric-value">{val}</div></div>', unsafe_allow_html=True)
