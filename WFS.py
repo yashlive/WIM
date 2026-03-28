@@ -1055,6 +1055,183 @@ def rain_accum(hourly, target_day=None):
     return out
 
 # ══════════════════════════════════════════════════════════════
+# ADVANCED OPERATIONAL INSIGHTS
+# ══════════════════════════════════════════════════════════════
+def rain_intensity_trend(slabs):
+    """Analyze if rain is intensifying or weakening across time windows"""
+    rain_slabs = [s for s in slabs if s["mm"] > 0]
+    if len(rain_slabs) < 2:
+        return None
+    
+    first_mm = rain_slabs[0]["mm"]
+    last_mm = rain_slabs[-1]["mm"]
+    first_label = rain_slabs[0]["label"]
+    last_label = rain_slabs[-1]["label"]
+    
+    if last_mm > first_mm * 1.5:
+        return f"⚠️ Rain is INTENSIFYING — heaviest period expected around {last_label.split('–')[0].strip()}. Complete critical operations before then."
+    elif first_mm > last_mm * 1.5:
+        return f"✓ Rain is WEAKENING — conditions improving after {first_label.split('–')[0].strip()}. Operations can resume with standard protocols."
+    else:
+        return f"→ Rain intensity STABLE across periods — consistent {first_mm}–{last_mm} mm per window. Plan uniform work distribution."
+
+def operational_window_optimizer(slabs, min_vis=5.0, max_wind=30, max_rain=1.0):
+    """Find best continuous 4-hour work windows for operations"""
+    safe_windows = []
+    current_start = None
+    current_duration = 0
+    
+    for s in slabs:
+        is_safe = (s["vis"] >= min_vis and 
+                   s["wind"] <= max_wind and 
+                   s["mm"] <= max_rain and 
+                   not s["lightning"])
+        
+        if is_safe:
+            if current_start is None:
+                current_start = s["label"]
+                current_duration = 2
+            else:
+                current_duration += 2
+        else:
+            if current_start and current_duration >= 4:
+                safe_windows.append((current_start, current_duration))
+            current_start = None
+            current_duration = 0
+    
+    # Check final window
+    if current_start and current_duration >= 4:
+        safe_windows.append((current_start, current_duration))
+    
+    if not safe_windows:
+        return "⚠️ No continuous 4-hour safe windows found. Consider shorter work cycles or waiting for conditions to improve."
+    
+    best = safe_windows[0]
+    return f"✓ Best operational window: {best[0]} ({best[1]} hours). Schedule high-precision activities (blasting, heavy lifts) during this period."
+
+def equipment_specific_advisories(slabs, mine_type="Coal Open Cast Mine"):
+    """Generate equipment-specific operational guidance"""
+    advisories = []
+    
+    # Find max values across all slabs
+    max_wind = max((s["wind"] for s in slabs), default=0)
+    max_rain = max((s["mm"] for s in slabs), default=0)
+    min_vis = min((s["vis"] for s in slabs), default=10)
+    has_lightning = any(s["lightning"] for s in slabs)
+    
+    # Haul Trucks
+    if max_wind >= 25:
+        advisories.append("🚛 HAUL TRUCKS: Crosswind alert at 25+ km/h. Reduce speed to 20 km/h on exposed haul roads. Increase following distance to 100m.")
+    elif max_wind >= 20:
+        advisories.append("🚛 HAUL TRUCKS: Moderate winds — maintain standard speeds but secure loose loads.")
+    
+    # Shovels & Dozers (no draglines per user request)
+    if has_lightning:
+        advisories.append("⛏️ SHOVELS/DOZERS: Lightning protocol active. All tall equipment operations suspended. Ground crews move to safe zones.")
+    elif max_rain >= 15:
+        advisories.append("⛏️ SHOVELS/DOZERS: Heavy rain expected. Park equipment on firm ground. Avoid bench edges — slope failure risk elevated.")
+    elif max_rain >= 5:
+        advisories.append("⛏️ SHOVELS/DOZERS: Moderate rain — traction reduced 30%. Reduce bucket loads, increase spotter visibility.")
+    
+    # Drills
+    if max_rain >= 10:
+        advisories.append("🔨 DRILLS: Hole collapse risk HIGH. Suspend drilling in friable formations. Protect charged holes with caps.")
+    elif max_rain >= 5:
+        advisories.append("🔨 DRILLS: Moderate hole collapse risk — monitor hole integrity before charging explosives.")
+    
+    if min_vis <= 2:
+        advisories.append("🔨 DRILLS: Visibility STOP — drilling operations suspended. Dust suppression systems offline.")
+    elif min_vis <= 5:
+        advisories.append("🔨 DRILLS: Reduced visibility — deploy secondary spotters, use radio contact every 5 minutes.")
+    
+    # Blasting (most critical)
+    if has_lightning:
+        advisories.append("💥 BLASTING: PROHIBITED — Lightning within 10km. 30-minute wait rule after last strike.")
+    elif max_wind >= 32:
+        advisories.append(f"💥 BLASTING: Wind STOP ({max_wind} km/h) — exceeds DGMS flyrock limit. Defer all blasting operations.")
+    elif max_wind >= 30:
+        advisories.append(f"💥 BLASTING: Wind CAUTION ({max_wind} km/h) — extend exclusion zone to 500m, verify flyrock shields.")
+    elif max_rain >= 5:
+        advisories.append("💥 BLASTING: Rain protocol — check hole water levels. Use water-resistant explosives. Post-brain: 2-hour ground assessment.")
+    
+    return advisories if advisories else ["✓ All equipment can operate under standard protocols."]
+
+def dust_risk_index(slabs, hourly):
+    """Calculate dust propagation risk based on wind, humidity, and rain"""
+    if not slabs:
+        return None
+    
+    avg_wind = sum(s["wind"] for s in slabs) / len(slabs)
+    avg_hum = sum(s["hum"] for s in slabs) / len(slabs)
+    total_rain = sum(s["mm"] for s in slabs)
+    
+    # High dust risk: windy + dry + no rain
+    if avg_wind >= 25 and avg_hum < 40 and total_rain < 1:
+        return f"🔴 HIGH DUST RISK: Wind {avg_wind:.0f} km/h + Low humidity {avg_hum:.0f}% + No rain. Deploy water bowsers every 2 hours. Mandatory dust masks in exposed areas."
+    elif avg_wind >= 20 and avg_hum < 50 and total_rain < 2:
+        return f"🟡 MODERATE DUST RISK: Conditions favor dust dispersal. Increase water suppression on haul roads."
+    elif total_rain >= 5 or avg_hum > 70:
+        return f"🟢 LOW DUST RISK: Rain/humidity suppressing dust. Standard protocols sufficient."
+    return None
+
+def fog_dew_prediction(hourly, target_day):
+    """Predict morning fog/dew based on overnight conditions"""
+    today = now_ist().date()
+    if target_day != today:
+        return None  # Only for today
+    
+    # Get overnight hours (8 PM - 6 AM)
+    overnight = [(dt, d) for dt, d in hourly if 20 <= dt.hour <= 23 or 0 <= dt.hour <= 6]
+    if not overnight:
+        return None
+    
+    avg_temp = sum(d["temp"] for _, d in overnight) / len(overnight)
+    avg_hum = sum(d["humidity"] for _, d in overnight) / len(overnight)
+    min_temp = min(d["temp"] for _, d in overnight)
+    
+    # Fog conditions: high humidity + low temp + clear skies
+    if avg_hum > 85 and min_temp < 15:
+        return f"🌫️ FOG ALERT: High overnight humidity ({avg_hum:.0f}%) + low temp ({min_temp:.1f}°C) = Dense fog likely 5–8 AM. Reduce haul truck speed by 50%. Activate fog lights."
+    elif avg_hum > 75 and min_temp < 18:
+        return f"💧 HEAVY DEW: Moderate fog/dew expected. Wet benches — traction reduced. Delay drilling until 9 AM for visibility clearance."
+    return None
+
+def soil_moisture_forecast(slabs, past_rain_24h=0):
+    """Predict ground conditions based on cumulative moisture"""
+    total_rain = sum(s["mm"] for s in slabs)
+    cumulative = past_rain_24h + total_rain
+    
+    if cumulative >= 25:
+        return f"🟤 SATURATED GROUND: {cumulative:.1f}mm cumulative rain. Haul roads likely muddy. Use low gear, increase following distance. Slope stability concerns on high benches."
+    elif cumulative >= 15:
+        return f"🟠 SOFT GROUND: {cumulative:.1f}mm rain accumulation. Expect rutting on haul roads. Deploy motor grader. Reduced productivity 15-20%."
+    elif cumulative >= 5:
+        return f"🟡 DAMP GROUND: {cumulative:.1f}mm total moisture. Firm but watch soft spots. Standard precautions."
+    return None
+
+def worker_safety_index(hourly, slabs):
+    """Assess worker comfort and safety conditions"""
+    temps = [d["temp"] for _, d in hourly]
+    max_temp = max(temps) if temps else 35
+    min_temp = min(temps) if temps else 25
+    
+    # Heat stress conditions
+    if max_temp >= 40:
+        return f"🔥 EXTREME HEAT: Max {max_temp:.1f}°C. Mandatory heat stress protocol — work 45 min / rest 15 min. Hydration stations every 200m. Watch for heat exhaustion."
+    elif max_temp >= 38:
+        return f"🌡️ HIGH HEAT: {max_temp:.1f}°C peak. Increase rest breaks. Schedule heavy labor 6–10 AM only."
+    elif max_temp <= 10:
+        return f"❄️ COLD CONDITIONS: Low {min_temp:.1f}°C. Hypothermia risk for night shift. Provide warming shelters."
+    
+    # Check for dangerous combination: heat + high humidity
+    avg_hum = sum(s["hum"] for s in slabs) / len(slabs) if slabs else 50
+    heat_index = max_temp + (avg_hum * 0.1)
+    if heat_index >= 45:
+        return f"⚠️ DANGEROUS HEAT INDEX: {heat_index:.1f}°C apparent temp. Suspend non-essential outdoor work 12–3 PM."
+    
+    return None
+
+# ══════════════════════════════════════════════════════════════
 # MINUTECAST
 # ══════════════════════════════════════════════════════════════
 def render_mc(mc):
@@ -1570,6 +1747,51 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
                 "wim-alert-moderate" if rain_t >= 5 or hi_w else
                 "wim-alert-low" if rain_t > 0 else "wim-alert-none")
         st.markdown(f'<div class="wim-alert {acss}"><div class="wim-alert-label">Forecast Advisory</div>{rec}</div>', unsafe_allow_html=True)
+
+        # Advanced Operational Insights
+        st.markdown('<div class="wim-section">Operational Intelligence</div>', unsafe_allow_html=True)
+        
+        # Rain Intensity Trend
+        trend = rain_intensity_trend(sl)
+        if trend:
+            st.markdown(f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:0.85rem;color:#334155;">{trend}</div>', unsafe_allow_html=True)
+        
+        # Operational Window Optimizer
+        window = operational_window_optimizer(sl, min_vis=VIS_CAUTION, max_wind=WIND_CAUTION, max_rain=RAIN_MOD)
+        st.markdown(f'<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:0.85rem;color:#166534;">{window}</div>', unsafe_allow_html=True)
+        
+        # Equipment-Specific Advisories
+        equip_advisories = equipment_specific_advisories(sl, mine_type)
+        if equip_advisories:
+            equip_html = '<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:12px 16px;font-size:0.82rem;color:#92400E;">'
+            equip_html += '<div style="font-weight:700;margin-bottom:8px;color:#B45309;">🛠️ Equipment Advisories</div>'
+            for adv in equip_advisories:
+                equip_html += f'<div style="margin:6px 0;padding-left:8px;border-left:3px solid #F59E0B;">{adv}</div>'
+            equip_html += '</div>'
+            st.markdown(equip_html, unsafe_allow_html=True)
+        
+        # Additional Environmental Insights
+        st.markdown('<div style="margin-top:16px;"></div>', unsafe_allow_html=True)
+        
+        # Dust Risk Index
+        dust_risk = dust_risk_index(sl, dh)
+        if dust_risk:
+            st.markdown(f'<div style="background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#92400E;">{dust_risk}</div>', unsafe_allow_html=True)
+        
+        # Fog/Dew Prediction (today only)
+        fog_dew = fog_dew_prediction(dh, tday)
+        if fog_dew:
+            st.markdown(f'<div style="background:#E0F2FE;border:1px solid #7DD3FC;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#0369A1;">{fog_dew}</div>', unsafe_allow_html=True)
+        
+        # Soil Moisture Forecast
+        soil = soil_moisture_forecast(sl)
+        if soil:
+            st.markdown(f'<div style="background:#F3E8FF;border:1px solid #D8B4FE;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#7E22CE;">{soil}</div>', unsafe_allow_html=True)
+        
+        # Worker Safety Index
+        safety = worker_safety_index(dh, sl)
+        if safety:
+            st.markdown(f'<div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#DC2626;">{safety}</div>', unsafe_allow_html=True)
 
         # Summary Metrics
         mcols = st.columns(7)
