@@ -1752,7 +1752,7 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
                 "wim-alert-low" if rain_t > 0 else "wim-alert-none")
         st.markdown(f'<div class="wim-alert {acss}"><div class="wim-alert-label">Forecast Advisory</div>{rec}</div>', unsafe_allow_html=True)
 
-        # Advanced Operational Insights - only show when weather is significant
+        # Additional Operational Context - only show actionable insights (no section heading)
         significant_weather = (
             ds["max_pop"] >= 50 or 
             rain_t >= 5 or 
@@ -1761,55 +1761,55 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
             ds["min_vis"] <= VIS_CAUTION
         )
         
+        # Collect meaningful insights only
+        insights_html = ""
+        
+        # Rain Intensity Trend (only if actually changing)
         if significant_weather:
-            st.markdown('<div class="wim-section">Operational Intelligence</div>', unsafe_allow_html=True)
-            
-            # Rain Intensity Trend
             trend = rain_intensity_trend(sl)
             if trend:
-                st.markdown(f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:0.85rem;color:#334155;">{trend}</div>', unsafe_allow_html=True)
-            
-            # Operational Window Optimizer - only show when weather is challenging
+                insights_html += f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:0.85rem;color:#334155;">{trend}</div>'
+        
+        # Operational Window - only if constrained (not 24h clear)
+        if significant_weather:
             window = operational_window_optimizer(sl, min_vis=VIS_CAUTION, max_wind=WIND_CAUTION, max_rain=RAIN_MOD)
-            # Only show if there are actual constraints (not 24 hours of clear weather)
             if "No continuous 4-hour safe windows" in window or "shorter work cycles" in window:
-                st.markdown(f'<div style="background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:0.85rem;color:#92400E;">{window}</div>', unsafe_allow_html=True)
-            # Don't show "Best window" if it's 24 hours - that's not useful information
-            
-            # Equipment-Specific Advisories - only when there are actual warnings
-            equip_advisories = equipment_specific_advisories(sl, dh, mine_type)
-            # Filter out the "all clear" message
-            real_advisories = [adv for adv in equip_advisories if "All equipment can operate" not in adv]
-            if real_advisories:
-                equip_html = '<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:12px 16px;font-size:0.82rem;color:#92400E;">'
-                equip_html += '<div style="font-weight:700;margin-bottom:8px;color:#B45309;">Equipment Advisories</div>'
-                for adv in real_advisories:
-                    equip_html += f'<div style="margin:6px 0;padding-left:8px;border-left:3px solid #F59E0B;">{adv}</div>'
-                equip_html += '</div>'
-                st.markdown(equip_html, unsafe_allow_html=True)
-            
-            # Additional Environmental Insights
-            st.markdown('<div style="margin-top:16px;"></div>', unsafe_allow_html=True)
-            
-            # Dust Risk Index
-            dust_risk = dust_risk_index(sl, dh)
-            if dust_risk:
-                st.markdown(f'<div style="background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#92400E;">{dust_risk}</div>', unsafe_allow_html=True)
-            
-            # Fog/Dew Prediction (today only)
-            fog_dew = fog_dew_prediction(dh, tday)
-            if fog_dew:
-                st.markdown(f'<div style="background:#E0F2FE;border:1px solid #7DD3FC;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#0369A1;">{fog_dew}</div>', unsafe_allow_html=True)
-            
-            # Soil Moisture Forecast
-            soil = soil_moisture_forecast(sl)
-            if soil:
-                st.markdown(f'<div style="background:#F3E8FF;border:1px solid #D8B4FE;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#7E22CE;">{soil}</div>', unsafe_allow_html=True)
-            
-            # Worker Safety Index
-            safety = worker_safety_index(dh, sl)
-            if safety:
-                st.markdown(f'<div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#DC2626;">{safety}</div>', unsafe_allow_html=True)
+                insights_html += f'<div style="background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:0.85rem;color:#92400E;">{window}</div>'
+        
+        # Equipment Advisories - only actual warnings (not "all clear")
+        equip_advisories = equipment_specific_advisories(sl, dh, mine_type)
+        real_advisories = [adv for adv in equip_advisories if "All equipment can operate" not in adv]
+        if real_advisories:
+            insights_html += '<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:12px 16px;font-size:0.82rem;color:#92400E;margin-bottom:12px;">'
+            insights_html += '<div style="font-weight:700;margin-bottom:8px;color:#B45309;">Equipment Advisories</div>'
+            for adv in real_advisories:
+                insights_html += f'<div style="margin:6px 0;padding-left:8px;border-left:3px solid #F59E0B;">{adv}</div>'
+            insights_html += '</div>'
+        
+        # Environmental insights - only when conditions exist
+        # Dust Risk
+        dust_risk = dust_risk_index(sl, dh)
+        if dust_risk and ("HIGH" in dust_risk or "MODERATE" in dust_risk):
+            insights_html += f'<div style="background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#92400E;">{dust_risk}</div>'
+        
+        # Fog/Dew
+        fog_dew = fog_dew_prediction(dh, tday)
+        if fog_dew:
+            insights_html += f'<div style="background:#E0F2FE;border:1px solid #7DD3FC;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#0369A1;">{fog_dew}</div>'
+        
+        # Soil Moisture (only if actually wet)
+        soil = soil_moisture_forecast(sl)
+        if soil and ("SATURATED" in soil or "SOFT" in soil):
+            insights_html += f'<div style="background:#F3E8FF;border:1px solid #D8B4FE;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#7E22CE;">{soil}</div>'
+        
+        # Worker Safety (heat/cold extremes only)
+        safety = worker_safety_index(dh, sl)
+        if safety:
+            insights_html += f'<div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#DC2626;">{safety}</div>'
+        
+        # Only render insights container if there's actual content
+        if insights_html:
+            st.markdown(insights_html, unsafe_allow_html=True)
 
         # Summary Metrics
         mcols = st.columns(7)
