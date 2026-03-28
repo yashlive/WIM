@@ -993,8 +993,13 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
             parts.append("Pit drainage must be inspected before morning shift. Bench and haul road surfaces will be severely impacted — mandatory post-rain ground assessment required before resuming OB removal, shovel, and dozer work. Deploy ore stockpile covers.")
     elif mod_sl:
         first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]; fp = rain_sl[0]["pop"]; lp = rain_sl[-1]["pop"]
-        parts.append(f"Moderate rainfall of {rain} mm is forecast from {first} through {last} with probability ranging {fp}–{lp}%.")
-        if pop < 40:
+        if pop >= 15:
+            parts.append(f"Moderate rainfall of {rain} mm is forecast from {first} through {last} with probability ranging {fp}–{lp}%.")
+        else:
+            parts.append(f"Moderate rainfall of {rain} mm is forecast from {first} through {last}.")
+        if pop < 15:
+            parts.append("Intermittent showers expected. Surface impact minimal — operations can continue with standard wet-weather protocols.")
+        elif pop < 40:
             parts.append(f"Lower probability ({pop}%) suggests showers may be scattered. Prioritize operations in drier morning window. Keep rain gear and drainage pumps on standby.")
         elif pop > 70:
             parts.append(f"High confidence ({pop}% probability) rain will occur. Shift high-precision blasting to alternate day if possible.")
@@ -1002,11 +1007,12 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
             parts.append("Plan coal loading and dispatch in the pre-rain dry window. Allow 1–2 hours post-rain drainage assessment before resuming heavy equipment on active benches. Check blast hole integrity before charging.")
         else:
             parts.append("Plan ore loading and dispatch in the pre-rain dry window. Allow 1–2 hours post-rain drainage assessment before resuming heavy equipment on active benches. Check blast hole integrity before charging.")
-    elif rain_sl:
+    elif rain_sl and pop > 0:
         first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]; fp = rain_sl[0]["pop"]
-        # Don't show probability in first sentence - it will be described in detail below
         parts.append(f"Light rainfall of {rain} mm is expected between {first} and {last}.")
-        if pop < 35:
+        if pop < 15:
+            parts.append("Intermittent drizzle expected. Surface impact minimal — operations can continue with standard wet-weather protocols.")
+        elif pop < 35:
             parts.append(f"Low probability ({pop}%) indicates intermittent drizzle. Surface impact minimal — operations can continue with standard wet-weather protocols.")
         elif pop > 60:
             parts.append(f"Moderate-to-high probability ({pop}%) suggests sustained light rain. Expect haul road surface degradation — deploy grader for maintenance.")
@@ -1476,7 +1482,7 @@ def render_weekly(by_day, days, site_type="Coal Open Cast Mine"):
             <div class="wim-day-label">{lbl}</div>
             <div class="wim-day-date">{d.strftime('%d %b')}</div>
             <div class="wim-day-cond">{s['condition']}</div>
-            <div class="wim-day-rain">{rain} mm{f" · {s['max_pop']}%" if rain > 0 else ""}</div>
+            <div class="wim-day-rain">{rain} mm{f" · {s['max_pop']}%" if rain > 0 and s['max_pop'] >= 15 else ""}</div>
             <div class="wim-day-temp">{s['max_temp']}° / {s['min_temp']}°C</div>
             <span class="wim-day-flag {fcss}">{flag}</span>
         </div>""", unsafe_allow_html=True)
@@ -1818,7 +1824,7 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         for col, (lbl, val) in zip(mcols, [
             ("Condition", ds["condition"]), ("Max Temp", f"{ds['max_temp']}°C"),
             ("Min Temp", f"{ds['min_temp']}°C"), ("Total Rain", f"{ds['total_rain']} mm"),
-            ("Rain Prob.", f"{ds['max_pop']}%"), ("Wind", f"{ds['avg_wind']} km/h"),
+            ("Rain Prob.", f"{ds['max_pop']}%" if ds['max_pop'] >= 15 else "—"), ("Wind", f"{ds['avg_wind']} km/h"),
             ("Cloud Cover", cloud_val),
         ]):
             col.markdown(f'<div class="wim-metric"><div class="wim-metric-label">{lbl}</div><div class="wim-metric-value">{val}</div></div>', unsafe_allow_html=True)
