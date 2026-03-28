@@ -1824,7 +1824,7 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         for col, (lbl, val) in zip(mcols, [
             ("Condition", ds["condition"]), ("Max Temp", f"{ds['max_temp']}°C"),
             ("Min Temp", f"{ds['min_temp']}°C"),            ("Total Rain", f"{rain_t} mm" if show_rain_metrics else "0 mm"),
-            ("Rain Prob.", f"{ds['max_pop']}%" if show_rain_metrics else "—"), ("Wind", f"{ds['avg_wind']} km/h"),
+            ("Rain Prob.", f"{ds['max_pop']}%" if show_rain_metrics else "0%"), ("Wind", f"{ds['avg_wind']} km/h"),
             ("Cloud Cover", cloud_val),
         ]):
             col.markdown(f'<div class="wim-metric"><div class="wim-metric-label">{lbl}</div><div class="wim-metric-value">{val}</div></div>', unsafe_allow_html=True)
