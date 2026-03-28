@@ -1112,18 +1112,12 @@ def operational_window_optimizer(slabs, min_vis=5.0, max_wind=30, max_rain=1.0):
     best = safe_windows[0]
     return f"✓ Best operational window: {best[0]} ({best[1]} hours). Schedule high-precision activities (blasting, heavy lifts) during this period."
 
-def equipment_specific_advisories(slabs, hourly, mine_type="Coal Open Cast Mine"):
+def equipment_specific_advisories(slabs, hourly=None, mine_type="Coal Open Cast Mine"):
     """Generate equipment-specific operational guidance"""
     advisories = []
     
-    # Check for heat conditions from hourly data
-    if hourly:
-        temps = [d["temp"] for _, d in hourly]
-        max_temp = max(temps) if temps else 35
-        if max_temp >= 40:
-            advisories.append("HIGH HEAT ALERT: Guide workers to stay hydrated, ensure rest shelters are available and maintained. Watch for heat exhaustion symptoms.")
-        elif max_temp >= 38:
-            advisories.append("HIGH HEAT: Guide workers to stay hydrated, ensure rest shelters are available and maintained.")
+    # Note: Heat warnings are handled by worker_safety_index, not here
+    # Heat affects workers, not specific equipment
     
     # Find max values across all slabs
     max_wind = max((s["wind"] for s in slabs), default=0)
