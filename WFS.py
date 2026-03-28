@@ -1913,8 +1913,8 @@ today   = now_ist().date()
 today_h = by_day.get(today, [])
 
 # ── Multi-Site Dashboard (if multiple sites) ──
-if len(sites) > 1:
-    render_all_sites_dashboard(sites, days=2)
+if len(ALL_SITES) > 1:
+    render_all_sites_dashboard(ALL_SITES, days=2)
 
 # ── 7-Day Outlook ──
 st.markdown('<div class="wim-section">7-Day Outlook</div>', unsafe_allow_html=True)
