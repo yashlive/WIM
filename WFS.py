@@ -983,23 +983,34 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
     elif rain == 0 and pop >= 25:
         parts.append(f"{dlabel} is likely dry with a {pop}% chance of isolated showers. Schedule blasting in morning hours and monitor sky conditions before afternoon shift.")
     elif heavy_sl:
-        hw = heavy_sl[0]["label"]
-        parts.append(f"Heavy rainfall totalling {rain} mm is expected {dlabel.lower()}, peaking around {hw}.")
+        hw = heavy_sl[0]["label"]; hp = heavy_sl[0]["pop"]
+        parts.append(f"Heavy rainfall totalling {rain} mm is expected {dlabel.lower()}, peaking around {hw} with {hp}% probability.")
+        if pop < 50:
+            parts.append(f"Despite moderate probability ({pop}%), rainfall intensity is high. Prepare drainage but consider proceeding with morning operations before {hw.split('–')[0].strip()}.")
         if "Coal" in mine_type:
             parts.append("Pit drainage must be inspected before morning shift. Bench and haul road surfaces will be severely impacted — mandatory post-rain ground assessment required before resuming OB removal, shovel, and dozer work. Deploy coal stockpile covers.")
         else:
             parts.append("Pit drainage must be inspected before morning shift. Bench and haul road surfaces will be severely impacted — mandatory post-rain ground assessment required before resuming OB removal, shovel, and dozer work. Deploy ore stockpile covers.")
     elif mod_sl:
-        first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]
-        parts.append(f"Moderate rainfall of {rain} mm is forecast from {first} through {last}.")
+        first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]; fp = rain_sl[0]["pop"]; lp = rain_sl[-1]["pop"]
+        parts.append(f"Moderate rainfall of {rain} mm is forecast from {first} through {last} with probability ranging {fp}–{lp}%.")
+        if pop < 40:
+            parts.append(f"Lower probability ({pop}%) suggests showers may be scattered. Prioritize operations in drier morning window. Keep rain gear and drainage pumps on standby.")
+        elif pop > 70:
+            parts.append(f"High confidence ({pop}% probability) rain will occur. Shift high-precision blasting to alternate day if possible.")
         if "Coal" in mine_type:
             parts.append("Plan coal loading and dispatch in the pre-rain dry window. Allow 1–2 hours post-rain drainage assessment before resuming heavy equipment on active benches. Check blast hole integrity before charging.")
         else:
             parts.append("Plan ore loading and dispatch in the pre-rain dry window. Allow 1–2 hours post-rain drainage assessment before resuming heavy equipment on active benches. Check blast hole integrity before charging.")
     elif rain_sl:
-        first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]
-        parts.append(f"Light rainfall of {rain} mm is expected between {first} and {last}.")
-        parts.append("Operational impact is minimal. Inspect blast area for surface water before charging holes.")
+        first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]; fp = rain_sl[0]["pop"]
+        parts.append(f"Light rainfall of {rain} mm is expected between {first} and {last} with {fp}% probability.")
+        if pop < 35:
+            parts.append(f"Low probability ({pop}%) indicates intermittent drizzle. Surface impact minimal — operations can continue with standard wet-weather protocols.")
+        elif pop > 60:
+            parts.append(f"Moderate-to-high probability ({pop}%) suggests sustained light rain. Expect haul road surface degradation — deploy grader for maintenance.")
+        else:
+            parts.append("Operational impact is minimal. Inspect blast area for surface water before charging holes.")
 
     if has_l:
         lt = [s["label"] for s in slabs if s["lightning"]]
