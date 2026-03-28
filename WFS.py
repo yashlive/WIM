@@ -1112,9 +1112,18 @@ def operational_window_optimizer(slabs, min_vis=5.0, max_wind=30, max_rain=1.0):
     best = safe_windows[0]
     return f"✓ Best operational window: {best[0]} ({best[1]} hours). Schedule high-precision activities (blasting, heavy lifts) during this period."
 
-def equipment_specific_advisories(slabs, mine_type="Coal Open Cast Mine"):
+def equipment_specific_advisories(slabs, hourly, mine_type="Coal Open Cast Mine"):
     """Generate equipment-specific operational guidance"""
     advisories = []
+    
+    # Check for heat conditions from hourly data
+    if hourly:
+        temps = [d["temp"] for _, d in hourly]
+        max_temp = max(temps) if temps else 35
+        if max_temp >= 40:
+            advisories.append("ALL EQUIPMENT: EXTREME HEAT — Operator fatigue risk. Mandatory hydration breaks. Monitor crew for heat exhaustion. Avoid prolonged sun exposure.")
+        elif max_temp >= 38:
+            advisories.append("ALL EQUIPMENT: HIGH HEAT — Increase operator rotation frequency. Provide shaded rest areas. Watch for heat stress symptoms.")
     
     # Find max values across all slabs
     max_wind = max((s["wind"] for s in slabs), default=0)
@@ -1194,9 +1203,9 @@ def fog_dew_prediction(hourly, target_day):
     
     # Fog conditions: high humidity + low temp + clear skies
     if avg_hum > 85 and min_temp < 15:
-        return f"🌫️ FOG ALERT: High overnight humidity ({avg_hum:.0f}%) + low temp ({min_temp:.1f}°C) = Dense fog likely 5–8 AM. Reduce haul truck speed by 50%. Activate fog lights."
+        return f"🌫️ FOG ALERT: High overnight humidity ({avg_hum:.0f}%) + low temp ({min_temp:.1f}°C) = Dense fog likely. Reduce haul truck speed by 50%. Activate fog lights."
     elif avg_hum > 75 and min_temp < 18:
-        return f"💧 HEAVY DEW: Moderate fog/dew expected. Wet benches — traction reduced. Delay drilling until 9 AM for visibility clearance."
+        return f"💧 HEAVY DEW: Moderate fog/dew expected. Wet benches — traction reduced. Delay drilling until visibility improves."
     return None
 
 def soil_moisture_forecast(slabs, past_rain_24h=0):
@@ -1220,9 +1229,9 @@ def worker_safety_index(hourly, slabs):
     
     # Heat stress conditions
     if max_temp >= 40:
-        return f"🔥 EXTREME HEAT: Max {max_temp:.1f}°C. Mandatory heat stress protocol — work 45 min / rest 15 min. Hydration stations every 200m. Watch for heat exhaustion."
+        return f"🔥 EXTREME HEAT: Max {max_temp:.1f}°C. Mandatory heat stress protocol. Increase rest frequency, provide hydration stations, watch for heat exhaustion."
     elif max_temp >= 38:
-        return f"🌡️ HIGH HEAT: {max_temp:.1f}°C peak. Increase rest breaks. Schedule heavy labor 6–10 AM only."
+        return f"🌡️ HIGH HEAT: {max_temp:.1f}°C peak. Schedule heavy labor during cooler morning hours. Increase rest breaks."
     elif max_temp <= 10:
         return f"❄️ COLD CONDITIONS: Low {min_temp:.1f}°C. Hypothermia risk for night shift. Provide warming shelters."
     
@@ -1230,7 +1239,7 @@ def worker_safety_index(hourly, slabs):
     avg_hum = sum(s["hum"] for s in slabs) / len(slabs) if slabs else 50
     heat_index = max_temp + (avg_hum * 0.1)
     if heat_index >= 45:
-        return f"⚠️ DANGEROUS HEAT INDEX: {heat_index:.1f}°C apparent temp. Suspend non-essential outdoor work 12–3 PM."
+        return f"⚠️ DANGEROUS HEAT INDEX: {heat_index:.1f}°C apparent temp. Suspend non-essential outdoor work during peak heat hours."
     
     return None
 
@@ -1768,16 +1777,21 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
             if trend:
                 st.markdown(f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:0.85rem;color:#334155;">{trend}</div>', unsafe_allow_html=True)
             
-            # Operational Window Optimizer
+            # Operational Window Optimizer - only show when weather is challenging
             window = operational_window_optimizer(sl, min_vis=VIS_CAUTION, max_wind=WIND_CAUTION, max_rain=RAIN_MOD)
-            st.markdown(f'<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:0.85rem;color:#166534;">{window}</div>', unsafe_allow_html=True)
+            # Only show if there are actual constraints (not 24 hours of clear weather)
+            if "No continuous 4-hour safe windows" in window or "shorter work cycles" in window:
+                st.markdown(f'<div style="background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:0.85rem;color:#92400E;">{window}</div>', unsafe_allow_html=True)
+            # Don't show "Best window" if it's 24 hours - that's not useful information
             
-            # Equipment-Specific Advisories
-            equip_advisories = equipment_specific_advisories(sl, mine_type)
-            if equip_advisories:
+            # Equipment-Specific Advisories - only when there are actual warnings
+            equip_advisories = equipment_specific_advisories(sl, dh, mine_type)
+            # Filter out the "all clear" message
+            real_advisories = [adv for adv in equip_advisories if "All equipment can operate" not in adv]
+            if real_advisories:
                 equip_html = '<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:12px 16px;font-size:0.82rem;color:#92400E;">'
                 equip_html += '<div style="font-weight:700;margin-bottom:8px;color:#B45309;">Equipment Advisories</div>'
-                for adv in equip_advisories:
+                for adv in real_advisories:
                     equip_html += f'<div style="margin:6px 0;padding-left:8px;border-left:3px solid #F59E0B;">{adv}</div>'
                 equip_html += '</div>'
                 st.markdown(equip_html, unsafe_allow_html=True)
