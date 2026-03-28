@@ -1121,9 +1121,9 @@ def equipment_specific_advisories(slabs, hourly, mine_type="Coal Open Cast Mine"
         temps = [d["temp"] for _, d in hourly]
         max_temp = max(temps) if temps else 35
         if max_temp >= 40:
-            advisories.append("ALL EQUIPMENT: EXTREME HEAT — Operator fatigue risk. Mandatory hydration breaks. Monitor crew for heat exhaustion. Avoid prolonged sun exposure.")
+            advisories.append("HIGH HEAT ALERT: Guide workers to stay hydrated, ensure rest shelters are available and maintained. Watch for heat exhaustion symptoms.")
         elif max_temp >= 38:
-            advisories.append("ALL EQUIPMENT: HIGH HEAT — Increase operator rotation frequency. Provide shaded rest areas. Watch for heat stress symptoms.")
+            advisories.append("HIGH HEAT: Guide workers to stay hydrated, ensure rest shelters are available and maintained.")
     
     # Find max values across all slabs
     max_wind = max((s["wind"] for s in slabs), default=0)
@@ -1131,21 +1131,20 @@ def equipment_specific_advisories(slabs, hourly, mine_type="Coal Open Cast Mine"
     min_vis = min((s["vis"] for s in slabs), default=10)
     has_lightning = any(s["lightning"] for s in slabs)
     
-    # Haul Trucks
+    # Haul Trucks - only severe conditions
     if max_wind >= 25:
         advisories.append("HAUL TRUCKS: Crosswind alert at 25+ km/h. Reduce speed to 20 km/h on exposed haul roads. Increase following distance to 100m.")
-    elif max_wind >= 20:
-        advisories.append("HAUL TRUCKS: Moderate winds — maintain standard speeds but secure loose loads.")
+    # Don't show moderate wind message - it's not severe enough
     
-    # Shovels & Dozers (no draglines per user request)
+    # Excavators & Dozers (no draglines per user request) - only severe conditions
     if has_lightning:
-        advisories.append("SHOVELS/DOZERS: Lightning protocol active. All tall equipment operations suspended. Ground crews move to safe zones.")
+        advisories.append("EXCAVATORS/DOZERS: Lightning protocol active. All tall equipment operations suspended. Ground crews move to safe zones.")
     elif max_rain >= 15:
-        advisories.append("SHOVELS/DOZERS: Heavy rain expected. Park equipment on firm ground. Avoid bench edges — slope failure risk elevated.")
+        advisories.append("EXCAVATORS/DOZERS: Heavy rain expected. Park equipment on firm ground. Avoid bench edges — slope failure risk elevated.")
     elif max_rain >= 5:
-        advisories.append("SHOVELS/DOZERS: Moderate rain — traction reduced 30%. Reduce bucket loads, increase spotter visibility.")
+        advisories.append("EXCAVATORS/DOZERS: Moderate rain — traction reduced 30%. Reduce bucket loads, increase spotter visibility.")
     
-    # Drills
+    # Drills - only severe conditions
     if max_rain >= 10:
         advisories.append("DRILLS: Hole collapse risk HIGH. Suspend drilling in friable formations. Protect charged holes with caps.")
     elif max_rain >= 5:
@@ -1156,13 +1155,12 @@ def equipment_specific_advisories(slabs, hourly, mine_type="Coal Open Cast Mine"
     elif min_vis <= 5:
         advisories.append("DRILLS: Reduced visibility — deploy secondary spotters, use radio contact every 5 minutes.")
     
-    # Blasting (most critical)
+    # Blasting (most critical) - only STOP conditions, not CAUTION
     if has_lightning:
         advisories.append("BLASTING: PROHIBITED — Lightning within 10km. 30-minute wait rule after last strike.")
     elif max_wind >= 32:
         advisories.append(f"BLASTING: Wind STOP ({max_wind} km/h) — exceeds DGMS flyrock limit. Defer all blasting operations.")
-    elif max_wind >= 30:
-        advisories.append(f"BLASTING: Wind CAUTION ({max_wind} km/h) — extend exclusion zone to 500m, verify flyrock shields.")
+    # Don't show wind CAUTION for blasting - only STOP
     elif max_rain >= 5:
         advisories.append("BLASTING: Rain protocol — check hole water levels. Use water-resistant explosives. Post-brain: 2-hour ground assessment.")
     
@@ -1229,9 +1227,9 @@ def worker_safety_index(hourly, slabs):
     
     # Heat stress conditions
     if max_temp >= 40:
-        return f"🔥 EXTREME HEAT: Max {max_temp:.1f}°C. Mandatory heat stress protocol. Increase rest frequency, provide hydration stations, watch for heat exhaustion."
+        return f"🔥 HIGH HEAT ALERT: Max {max_temp:.1f}°C. Guide workers to stay hydrated, ensure rest shelters are available and maintained. Watch for heat exhaustion symptoms."
     elif max_temp >= 38:
-        return f"🌡️ HIGH HEAT: {max_temp:.1f}°C peak. Schedule heavy labor during cooler morning hours. Increase rest breaks."
+        return f"🌡️ HIGH HEAT: {max_temp:.1f}°C peak. Guide workers to stay hydrated, ensure rest shelters are available and maintained."
     elif max_temp <= 10:
         return f"❄️ COLD CONDITIONS: Low {min_temp:.1f}°C. Hypothermia risk for night shift. Provide warming shelters."
     
