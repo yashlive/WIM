@@ -1004,7 +1004,8 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
             parts.append("Plan ore loading and dispatch in the pre-rain dry window. Allow 1–2 hours post-rain drainage assessment before resuming heavy equipment on active benches. Check blast hole integrity before charging.")
     elif rain_sl:
         first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]; fp = rain_sl[0]["pop"]
-        parts.append(f"Light rainfall of {rain} mm is expected between {first} and {last} with {fp}% probability.")
+        # Don't show probability in first sentence - it will be described in detail below
+        parts.append(f"Light rainfall of {rain} mm is expected between {first} and {last}.")
         if pop < 35:
             parts.append(f"Low probability ({pop}%) indicates intermittent drizzle. Surface impact minimal — operations can continue with standard wet-weather protocols.")
         elif pop > 60:
