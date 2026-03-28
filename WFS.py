@@ -1868,7 +1868,7 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
                 vis_td  = f'<td class="td-alert">{v} km</td>' if v <= VIS_STOP else (f'<td class="td-warn">{v} km</td>' if v <= VIS_CAUTION else f'<td>{v} km</td>')
                 l_td    = '<td class="td-alert"><span class="wim-badge b-lightning">Alert</span></td>' if s["lightning"] else '<td style="color:#94A3B8;">—</td>'
                 impact  = mining_impact_html(mm, w, v, s["lightning"])
-                rows   += f"<tr><td style='font-weight:600;color:#334155;'>{s['label']}</td>{rain_td}<td style='color:#64748B;'>{s['pop']}%</td>{wind_td}{vis_td}{l_td}<td>{impact}</td></tr>"
+                rows   += f"<tr><td style='font-weight:600;color:#334155;'>{s['label']}</td>{rain_td}<td style='color:#64748B;'>{s['pop'] if mm > 0 else 0}%</td>{wind_td}{vis_td}{l_td}<td>{impact}</td></tr>"
             st.markdown(
                 '<div style="overflow-x:auto;"><table class="wim-table"><thead><tr>'
                 '<th>Time Window</th><th>Rainfall</th><th>Probability</th>'
