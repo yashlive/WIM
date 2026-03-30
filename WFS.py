@@ -105,7 +105,7 @@ header[data-testid="stHeader"] button[kind="header"],header[data-testid="stHeade
 .wim-site-coord{{font-size:0.75rem;color:#94A3B8;}}
 
 # Alert boxes - high/moderate/low risk styling
-.wim-alert{{border-radius:8px;padding:14px 18px;margin:14px 0;font-size:0.875rem;line-height:1.6;border:1px solid;border-left:5px solid;}}
+.wim-alert{{border-radius:8px;padding:14px 18px;margin:14px 0;font-size:0.875rem;line-height:1.6;border:1px solid;border-left:5px solid;background:#F0FDF4;border-color:#BBF7D0;border-left-color:#16A34A;}}
 .wim-alert-label{{font-size:0.65rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px;display:flex;align-items:center;gap:6px;}}
 .wim-alert-label::before{{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0;}}
 
