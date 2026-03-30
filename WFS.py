@@ -911,8 +911,11 @@ def build_slabs(hourly, is_today=False):
     for sk, r in raw.items():
         if not r["count"]: continue
         avg = lambda lst: sum(lst) / len(lst) if lst else 0
+        # Use 75th percentile for probability (consistent with day_summary and rain_accum)
+        pops = r["pop"]
+        pop_val = int(sorted(pops)[int(len(pops)*0.75)] if pops else 0)
         slabs.append(dict(label=sk[2], sort=sk[0], mm=round(r["rain"], 1),
-            pop=int(round(avg(r["pop"]), 0)), wind=round(avg(r["wind"]), 1),
+            pop=pop_val, wind=round(avg(r["wind"]), 1),
             vis=round(avg(r["vis"]), 1), hum=round(avg(r["hum"]), 1),
             lightning=any(r["lightning"])))
     slabs.sort(key=lambda x: x["sort"])
