@@ -124,17 +124,6 @@ header[data-testid="stHeader"] button[kind="header"],header[data-testid="stHeade
 # Gray = no data/minimal risk
 .wim-alert-none{{background:#F8FAFC;border-color:#E2E8F0;border-left-color:#94A3B8;color:#475569;}}
 .wim-alert-none .wim-alert-label::before{{background:#94A3B8;}}
-
-# Pulsing animations for critical alerts
-@keyframes pulse-red {{ 0%, 100% {{ box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }} 50% {{ box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }} }}
-@keyframes pulse-orange {{ 0%, 100% {{ box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.4); }} 50% {{ box-shadow: 0 0 0 8px rgba(217, 119, 6, 0); }} }}
-@keyframes pulse-yellow {{ 0%, 100% {{ box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }} 50% {{ box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }} }}
-@keyframes pulse-purple {{ 0%, 100% {{ box-shadow: 0 0 0 0 rgba(147, 51, 234, 0.4); }} 50% {{ box-shadow: 0 0 0 8px rgba(147, 51, 234, 0); }} }}
-
-.wim-alert-pulse-red {{ animation: pulse-red 2s infinite; }}
-.wim-alert-pulse-orange {{ animation: pulse-orange 2s infinite; }}
-.wim-alert-pulse-yellow {{ animation: pulse-yellow 2s infinite; }}
-.wim-alert-pulse-purple {{ animation: pulse-purple 2s infinite; }}
 .wim-section{{font-size:0.65rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#94A3B8;margin:8px 0 10px 0;padding-bottom:6px;border-bottom:1px solid #E2E8F0;}}
 .wim-metric{{background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:16px 18px;height:100%;}}
 .wim-metric-label{{font-size:0.65rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#94A3B8;margin-bottom:6px;}}
@@ -1793,15 +1782,7 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         acss = ("wim-alert-high" if rain_t >= 15 or has_l else
                 "wim-alert-moderate" if rain_t >= 5 or hi_w else
                 "wim-alert-low")
-        
-        # Add pulsing animation for critical conditions
-        pulse_class = ""
-        if ds["max_temp"] >= 40:
-            pulse_class = " wim-alert-pulse-orange"  # High heat
-        elif has_l:
-            pulse_class = " wim-alert-pulse-yellow"  # Lightning
-        
-        st.markdown(f'<div class="wim-alert {acss}{pulse_class}"><div class="wim-alert-label">Forecast Advisory</div>{rec}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="wim-alert {acss}"><div class="wim-alert-label">Forecast Advisory</div>{rec}</div>', unsafe_allow_html=True)
 
         # Additional Operational Context - only show actionable insights (no section heading)
         significant_weather = (
