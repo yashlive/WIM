@@ -1,13 +1,7 @@
 """
 Adani Natural Resources — WIM (Weather Intelligence Mining)
-v3.0 — Multi-source weather forecasting for mining operations
-
-What this app does:
-- Pulls weather data from multiple APIs (Open-Meteo, AccuWeather, OpenWeather, Tomorrow.io)
-- Aggregates forecasts into actionable mining advisories
-- Shows 2-hour precipitation windows for operational planning
-- Provides equipment-specific safety recommendations
-- Tracks multiple mine sites across India
+v3.0 — Supabase DB integration, clock fix, sidebar redesign,
+        hourly precipitation for all days, mining impact column
 """
 import os, json, requests, collections, base64, concurrent.futures
 import streamlit.components.v1 as components
@@ -15,16 +9,14 @@ from datetime import datetime, timedelta
 import pytz
 import streamlit as st
 
-# ── Environment setup ──
-# Load API keys from .env file if running locally
+# ── Load .env for local development ──
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    pass  # Production will use actual env vars
+    pass  # python-dotenv not installed — env vars must be set another way
 
-# ── Database connection ──
-# Tries Supabase first, falls back to local JSON if not configured
+# ── Supabase client (optional — falls back to JSON if not configured) ──
 _supabase_client = None
 def _get_supabase():
     global _supabase_client
@@ -41,7 +33,6 @@ def _get_supabase():
     except Exception:
         return None
 
-# Streamlit page config
 st.set_page_config(
     page_title="WIM — Weather Intelligence Mining | Adani Natural Resources",
     page_icon="\U0001f326",
@@ -49,7 +40,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Helper to load images (logos, backgrounds) as base64
+# ── Load assets ──
 def load_asset_b64(path):
     try:
         with open(path, "rb") as f:
@@ -61,13 +52,11 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _CS_DIR     = "/workspaces/weather-forecast-mines"
 
 def _asset_path(filename):
-    # Look for assets in common locations
     for base in [_SCRIPT_DIR, _CS_DIR]:
         p = os.path.join(base, filename)
         if os.path.exists(p): return p
     return os.path.join(_SCRIPT_DIR, filename)
 
-# Asset paths - logo and custom font
 LOGO_PATH = _asset_path("Adani_2012_logo.png")
 FONT_PATH = _asset_path("adani-regular.ttf")
 LOGO_B64  = load_asset_b64(LOGO_PATH)
@@ -75,13 +64,10 @@ FONT_B64  = load_asset_b64(FONT_PATH)
 _FONT_LOADED = bool(FONT_B64)
 _LOGO_LOADED = bool(LOGO_B64)
 
-# Build logo HTML - use image if available, fallback to text
 LOGO_HTML  = f'<img src="data:image/png;base64,{LOGO_B64}" style="height:44px;display:block;" alt="Adani">' if LOGO_B64 else '<span style="font-size:1.6rem;font-weight:900;color:#0B74B0;">adani</span>'
 _FONT_STACK = ("'AdaniFont', 'Helvetica Neue', Arial, sans-serif" if FONT_B64 else "'Helvetica Neue', Arial, sans-serif")
 FONT_FACE  = f"@font-face{{font-family:'AdaniFont';src:url('data:font/truetype;base64,{FONT_B64}') format('truetype');font-weight:normal;font-style:normal;}}" if FONT_B64 else ""
 
-# Main CSS styles for the app
-# Using inline styles to avoid external CSS file dependencies
 _CSS = f"""<style>
 {FONT_FACE}
 *,*::before,*::after{{box-sizing:border-box;}}
@@ -103,25 +89,15 @@ header[data-testid="stHeader"] button[kind="header"],header[data-testid="stHeade
 .wim-site-row{{display:flex;align-items:baseline;gap:8px;margin:0 0 4px 0;}}
 .wim-site-name{{font-size:1.375rem;font-weight:700;color:#1A1A2E;}}
 .wim-site-coord{{font-size:0.75rem;color:#94A3B8;}}
-
-# Alert boxes - high/moderate/low risk styling
-.wim-alert{{border-radius:8px;padding:14px 18px;margin:14px 0;font-size:0.875rem;line-height:1.6;border:1px solid;border-left:5px solid;background:#F0FDF4;border-color:#BBF7D0;border-left-color:#16A34A;}}
+.wim-alert{{border-radius:8px;padding:14px 18px;margin:14px 0;font-size:0.875rem;line-height:1.6;border:1px solid;border-left:5px solid;}}
 .wim-alert-label{{font-size:0.65rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px;display:flex;align-items:center;gap:6px;}}
 .wim-alert-label::before{{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0;}}
-
-# Red = high risk/stop conditions
-.wim-alert-high{{background:#FFF1F2 !important;border-color:#FECDD3 !important;border-left-color:#DC2626 !important;color:#881337 !important;}}
+.wim-alert-high{{background:#FFF1F2;border-color:#FECDD3;border-left-color:#DC2626;color:#881337;}}
 .wim-alert-high .wim-alert-label::before{{background:#DC2626;}}
-
-# Yellow = moderate risk/caution
-.wim-alert-moderate{{background:#FFFBEB !important;border-color:#FDE68A !important;border-left-color:#D97706 !important;color:#78350F !important;}}
+.wim-alert-moderate{{background:#FFFBEB;border-color:#FDE68A;border-left-color:#D97706;color:#78350F;}}
 .wim-alert-moderate .wim-alert-label::before{{background:#D97706;}}
-
-# Green = safe/clear conditions
-.wim-alert-low{{background:#F0FDF4 !important;border-color:#BBF7D0 !important;border-left-color:#16A34A !important;color:#14532D !important;}}
+.wim-alert-low{{background:#F0FDF4;border-color:#BBF7D0;border-left-color:#16A34A;color:#14532D;}}
 .wim-alert-low .wim-alert-label::before{{background:#16A34A;}}
-
-# Gray = no data/minimal risk
 .wim-alert-none{{background:#F8FAFC;border-color:#E2E8F0;border-left-color:#94A3B8;color:#475569;}}
 .wim-alert-none .wim-alert-label::before{{background:#94A3B8;}}
 .wim-section{{font-size:0.65rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#94A3B8;margin:8px 0 10px 0;padding-bottom:6px;border-bottom:1px solid #E2E8F0;}}
@@ -1008,20 +984,20 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
         else:
             parts.append(f"{dlabel} is forecast to be completely dry. All open-cast operations including OB removal, drilling, blasting, and ore dispatch can proceed normally.")
     elif rain == 0 and pop >= 25:
-        parts.append(f"{dlabel} is expected to remain dry with a {pop}% chance of isolated showers. Schedule blasting during morning hours and monitor sky conditions prior to the afternoon shift.")
+        parts.append(f"{dlabel} is likely dry with a {pop}% chance of isolated showers. Schedule blasting in morning hours and monitor sky conditions before afternoon shift.")
     elif heavy_sl:
         hw = heavy_sl[0]["label"]; hp = heavy_sl[0]["pop"]
         parts.append(f"Heavy rainfall totaling {rain} mm is expected {dlabel.lower()}, peaking around {hw} with {hp}% probability.")
         if pop < 50:
             parts.append(f"Despite moderate probability ({pop}%), rainfall intensity is high. Prepare drainage but consider proceeding with morning operations before {hw.split('–')[0].strip()}.")
         if "Coal" in mine_type:
-            parts.append("Pit drainage must be inspected before the morning shift. Bench and haul road surfaces will be severely impacted — mandatory post-rain ground assessment required before resuming OB removal, excavator, and dozer work. Deploy coal stockpile covers.")
+            parts.append("Pit drainage must be inspected before morning shift. Bench and haul road surfaces will be severely impacted — mandatory post-rain ground assessment required before resuming OB removal, excavator, and dozer work. Deploy coal stockpile covers.")
         else:
-            parts.append("Pit drainage must be inspected before the morning shift. Bench and haul road surfaces will be severely impacted — mandatory post-rain ground assessment required before resuming OB removal, excavator, and dozer work. Deploy ore stockpile covers.")
+            parts.append("Pit drainage must be inspected before morning shift. Bench and haul road surfaces will be severely impacted — mandatory post-rain ground assessment required before resuming OB removal, excavator, and dozer work. Deploy ore stockpile covers.")
     elif mod_sl:
         first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]; fp = rain_sl[0]["pop"]; lp = rain_sl[-1]["pop"]
         if pop >= 15:
-            parts.append(f"Moderate rainfall of {rain} mm is forecast from {first} through {last} with probabilities ranging from {fp}% to {lp}%.")
+            parts.append(f"Moderate rainfall of {rain} mm is forecast from {first} through {last} with probability ranging {fp}–{lp}%.")
         else:
             parts.append(f"Moderate rainfall of {rain} mm is forecast from {first} through {last}.")
         if pop < 15:
@@ -1031,14 +1007,14 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
         elif pop > 70:
             parts.append(f"High confidence ({pop}% probability) rain will occur. Shift high-precision blasting to alternate day if possible.")
         if "Coal" in mine_type:
-            parts.append("Plan coal loading and dispatch during the dry window before rainfall. Allow 1–2 hours for post-rain drainage assessment before resuming heavy equipment on active benches. Verify blast hole integrity prior to charging.")
+            parts.append("Plan coal loading and dispatch in the pre-rain dry window. Allow 1–2 hours post-rain drainage assessment before resuming heavy equipment on active benches. Check blast hole integrity before charging.")
         else:
-            parts.append("Plan ore loading and dispatch during the dry window before rainfall. Allow 1–2 hours for post-rain drainage assessment before resuming heavy equipment on active benches. Verify blast hole integrity prior to charging.")
+            parts.append("Plan ore loading and dispatch in the pre-rain dry window. Allow 1–2 hours post-rain drainage assessment before resuming heavy equipment on active benches. Check blast hole integrity before charging.")
     elif rain_sl and pop >= 15:
         first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]; fp = rain_sl[0]["pop"]
         parts.append(f"Light rainfall of {rain} mm is expected between {first} and {last}.")
         if pop < 35:
-            parts.append(f"Low probability ({pop}%) indicates intermittent drizzle. Surface impact is minimal — operations may continue with standard wet-weather protocols.")
+            parts.append(f"Low probability ({pop}%) indicates intermittent drizzle. Surface impact minimal — operations can continue with standard wet-weather protocols.")
         elif pop > 60:
             parts.append(f"Moderate-to-high probability ({pop}%) suggests sustained light rain. Expect haul road surface degradation — deploy grader for maintenance.")
         else:
@@ -1046,7 +1022,7 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
 
     if has_l:
         lt = [s["label"] for s in slabs if s["lightning"]]
-        parts.append(f"Lightning forecast around {lt[0]}. All blasting, drilling, and work near tall equipment (excavators, conveyors) must cease 30 minutes before the storm and resume only after 30 clear minutes.")
+        parts.append(f"Lightning forecast around {lt[0]}. All blasting, drilling, and work near tall equipment (excavators, conveyors) must halt 30 minutes before the storm and resume only after 30 clear minutes.")
 
     if mwind >= WIND_STOP_MINE:
         if "Coal" in mine_type:
@@ -1064,7 +1040,7 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
     elif mvis <= VIS_CAUTION and mvis > 0:
         parts.append(f"Reduced visibility of {mvis} km expected. Enforce lower truck speeds on haul roads and deploy additional spotters on active benches.")
 
-    return " ".join(parts) if parts else f"{dlabel} presents no significant weather concerns. All planned operations can proceed as scheduled."
+    return " ".join(parts) if parts else f"{dlabel} presents no significant weather concerns. All planned operations may proceed as scheduled."
 
 # ══════════════════════════════════════════════════════════════
 # RAIN ACCUMULATION
@@ -1164,11 +1140,11 @@ def equipment_specific_advisories(slabs, hourly=None, mine_type="Coal Open Cast 
     
     # Excavators & Dozers (no draglines per user request) - only severe conditions
     if has_lightning:
-        advisories.append("EXCAVATORS/DOZERS: Lightning protocol active. All tall equipment operations suspended. Ground crews move to safe zones.")
+        advisories.append("EXCAVATORS/DOZERS: Lightning protocol active. Suspend all tall equipment operations. Ground crews must move to safe zones immediately.")
     elif max_rain >= 15:
         advisories.append("EXCAVATORS/DOZERS: Heavy rain expected. Park equipment on firm ground. Avoid bench edges — slope failure risk elevated.")
     elif max_rain >= 5:
-        advisories.append("EXCAVATORS/DOZERS: Moderate rain — traction reduced 30%. Reduce bucket loads, increase spotter visibility.")
+        advisories.append("EXCAVATORS/DOZERS: Moderate rain — traction reduced by 30%. Reduce bucket loads, increase spotter visibility.")
     
     # Drills - only severe conditions
     if max_rain >= 10:
@@ -1188,7 +1164,7 @@ def equipment_specific_advisories(slabs, hourly=None, mine_type="Coal Open Cast 
         advisories.append(f"BLASTING: Wind STOP ({max_wind} km/h) — exceeds DGMS flyrock limit. Defer all blasting operations.")
     # Don't show wind CAUTION for blasting - only STOP
     elif max_rain >= 5:
-        advisories.append("BLASTING: Rain protocol — check hole water levels. Use water-resistant explosives. Post-brain: 2-hour ground assessment.")
+        advisories.append("BLASTING: Rain protocol — check hole water levels. Use water-resistant explosives. Post-rain: 2-hour ground assessment.")
     
     return advisories if advisories else ["All equipment can operate under standard protocols."]
 
@@ -1238,7 +1214,7 @@ def soil_moisture_forecast(slabs, past_rain_24h=0):
     cumulative = past_rain_24h + total_rain
     
     if cumulative >= 25:
-        return f"🟤 SATURATED GROUND: {cumulative:.1f}mm cumulative rain. Haul roads likely muddy. Use low gear, increase following distance. Slope stability concerns on high benches."
+        return f"🟤 SATURATED GROUND: {cumulative:.1f}mm cumulative rain. Haul roads will likely be muddy. Use low gear, increase following distance. Slope stability concerns on high benches."
     elif cumulative >= 15:
         return f"🟠 SOFT GROUND: {cumulative:.1f}mm rain accumulation. Expect rutting on haul roads. Deploy motor grader. Reduced productivity 15-20%."
     elif cumulative >= 5:
@@ -1253,9 +1229,9 @@ def worker_safety_index(hourly, slabs):
     
     # Heat stress conditions
     if max_temp >= 40:
-        return f"🔥 HIGH HEAT ALERT: Max {max_temp:.1f}°C. Guide workers to stay hydrated, ensure rest shelters are available and maintained. Watch for heat exhaustion symptoms."
+        return f"🔥 HIGH HEAT ALERT: Max {max_temp:.1f}°C. Ensure workers stay hydrated and rest shelters are available. Watch for heat exhaustion symptoms."
     elif max_temp >= 38:
-        return f"🌡️ HIGH HEAT: {max_temp:.1f}°C peak. Guide workers to stay hydrated, ensure rest shelters are available and maintained."
+        return f"🌡️ HIGH HEAT: {max_temp:.1f}°C peak. Ensure workers stay hydrated and rest shelters are available."
     elif max_temp <= 10:
         return f"❄️ COLD CONDITIONS: Low {min_temp:.1f}°C. Hypothermia risk for night shift. Provide warming shelters."
     
@@ -1781,7 +1757,7 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         rain_t = ds["total_rain"]; has_l = any(s["lightning"] for s in sl); hi_w = ds["avg_wind"] >= WIND_CAUTION
         acss = ("wim-alert-high" if rain_t >= 15 or has_l else
                 "wim-alert-moderate" if rain_t >= 5 or hi_w else
-                "wim-alert-low")
+                "wim-alert-low")  # All safe conditions (dry or light rain) use green
         st.markdown(f'<div class="wim-alert {acss}"><div class="wim-alert-label">Forecast Advisory</div>{rec}</div>', unsafe_allow_html=True)
 
         # Additional Operational Context - only show actionable insights (no section heading)
