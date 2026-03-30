@@ -1781,7 +1781,7 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         rain_t = ds["total_rain"]; has_l = any(s["lightning"] for s in sl); hi_w = ds["avg_wind"] >= WIND_CAUTION
         acss = ("wim-alert-high" if rain_t >= 15 or has_l else
                 "wim-alert-moderate" if rain_t >= 5 or hi_w else
-                "wim-alert-low")  # All safe conditions (dry or light rain) use green
+                "wim-alert-low")
         st.markdown(f'<div class="wim-alert {acss}"><div class="wim-alert-label">Forecast Advisory</div>{rec}</div>', unsafe_allow_html=True)
 
         # Additional Operational Context - only show actionable insights (no section heading)
