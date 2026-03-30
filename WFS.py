@@ -110,15 +110,15 @@ header[data-testid="stHeader"] button[kind="header"],header[data-testid="stHeade
 .wim-alert-label::before{{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0;}}
 
 # Red = high risk/stop conditions
-.wim-alert-high{{background:#FFF1F2;border-color:#FECDD3;border-left-color:#DC2626;color:#881337;}}
+.wim-alert-high{{background:#FFF1F2 !important;border-color:#FECDD3 !important;border-left-color:#DC2626 !important;color:#881337 !important;}}
 .wim-alert-high .wim-alert-label::before{{background:#DC2626;}}
 
 # Yellow = moderate risk/caution
-.wim-alert-moderate{{background:#FFFBEB;border-color:#FDE68A;border-left-color:#D97706;color:#78350F;}}
+.wim-alert-moderate{{background:#FFFBEB !important;border-color:#FDE68A !important;border-left-color:#D97706 !important;color:#78350F !important;}}
 .wim-alert-moderate .wim-alert-label::before{{background:#D97706;}}
 
 # Green = safe/clear conditions
-.wim-alert-low{{background:#F0FDF4;border-color:#BBF7D0;border-left-color:#16A34A;color:#14532D;}}
+.wim-alert-low{{background:#F0FDF4 !important;border-color:#BBF7D0 !important;border-left-color:#16A34A !important;color:#14532D !important;}}
 .wim-alert-low .wim-alert-label::before{{background:#16A34A;}}
 
 # Gray = no data/minimal risk
