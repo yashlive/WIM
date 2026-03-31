@@ -1406,6 +1406,8 @@ def render_hourly_graph(hourly, target_day):
 def render_weekly(by_day, days, site_type="Coal Open Cast Mine"):
     today = now_ist().date()
     cols  = st.columns(min(days, 7))
+    prev_max_temp = None  # Track previous day for trend arrows
+    
     for i in range(min(days, 7)):
         d   = today + timedelta(days=i)
         lbl = "Today" if i == 0 else ("Tomorrow" if i == 1 else d.strftime("%a"))
@@ -1416,6 +1418,21 @@ def render_weekly(by_day, days, site_type="Coal Open Cast Mine"):
         rain = s["total_rain"]; has_l = any(x["lightning"] for x in sl)
         max_pop = s["max_pop"]
         mine_type_current = site_type  # Use the passed site_type for consistency
+        
+        # Calculate temperature trend arrow
+        curr_max = s['max_temp']
+        trend_arrow = ""
+        if prev_max_temp is not None and isinstance(curr_max, (int, float)) and isinstance(prev_max_temp, (int, float)):
+            diff = curr_max - prev_max_temp
+            if diff > 2:
+                trend_arrow = " <span style='color:#DC2626'>↑</span>"  # Red up arrow
+            elif diff < -2:
+                trend_arrow = " <span style='color:#16A34A'>↓</span>"  # Green down arrow
+            elif diff > 0:
+                trend_arrow = " <span style='color:#DC2626;font-size:0.8em'>↑</span>"  # Small red up
+            elif diff < 0:
+                trend_arrow = " <span style='color:#16A34A;font-size:0.8em'>↓</span>"  # Small green down
+        prev_max_temp = curr_max
         
         # Use smart rain classification with probability (same as condition_str logic)
         # Thresholds: < 0.5mm or < 15% pop = Clear (not drizzle)
@@ -1434,7 +1451,7 @@ def render_weekly(by_day, days, site_type="Coal Open Cast Mine"):
             <div class="wim-day-date">{d.strftime('%d %b')}</div>
             <div class="wim-day-cond">{s['condition']}</div>
             <div class="wim-day-rain">{f"{rain} mm" if rain >= 0.5 else "0.0 mm"}{f" · {s['max_pop']}%" if rain >= 0.5 and s['max_pop'] >= 15 else ""}</div>
-            <div class="wim-day-temp">{s['max_temp']}° / {s['min_temp']}°C</div>
+            <div class="wim-day-temp">{s['max_temp']}°{trend_arrow} / {s['min_temp']}°C</div>
             <span class="wim-day-flag {fcss}">{flag}</span>
         </div>""", unsafe_allow_html=True)
 
@@ -1655,10 +1672,21 @@ with _col_left:
         <div class="wim-site-coord">{site['lat']}° N, {site['lon']}° E</div>
     </div>""", unsafe_allow_html=True)
 
+# Display last updated timestamp
+minutes_ago = int((now_ist() - last_updated).total_seconds() / 60)
+is_stale = minutes_ago > 60
+timestamp_color = "#DC2626" if is_stale else "#64748B"
+timestamp_text = f"Updated {minutes_ago} min ago" if minutes_ago < 60 else f"Updated {minutes_ago // 60}h {minutes_ago % 60}m ago"
+refresh_badge = "<span style='background:#FEE2E2;color:#DC2626;padding:2px 8px;border-radius:4px;font-size:0.7rem;margin-left:8px;'>Refresh</span>" if is_stale else ""
+st.markdown(f'<div style="font-size:0.75rem;color:{timestamp_color};margin-top:4px;">{timestamp_text}{refresh_badge}</div>', unsafe_allow_html=True)
+
 _loading = st.empty()
 _loading.caption(f"Fetching forecast for {site['name']}…")
 by_day, mc_data, src_status = build_forecast(site["lat"], site["lon"], days)
 _loading.empty()
+
+# Store timestamp for last update
+last_updated = now_ist()
 
 if not by_day:
     _ok    = [s for s, v in src_status.items() if v == "ok"]
@@ -1810,15 +1838,16 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
             st.markdown('<div class="wim-section">Radar — Next 2 Hours (MinuteCast)</div>', unsafe_allow_html=True)
             render_mc(mc_data)
 
-        # Rain Accumulation - only show if there's precipitation expected
+        # Rain Accumulation - show section always, with content or clear message
         acc = rain_accum(dh, target_day=tday)
         pfx = "Next" if tday == today else "First"
         
         # Check if any accumulation has rain
         has_rain = any(acc[h][0] > 0 for h in [2, 4, 6, 12, 24])
         
+        st.markdown(f'<div class="wim-section">Rainfall Accumulation{ "" if tday == today else " — From Midnight"}</div>', unsafe_allow_html=True)
+        
         if has_rain:
-            st.markdown(f'<div class="wim-section">Rainfall Accumulation{"" if tday == today else " — From Midnight"}</div>', unsafe_allow_html=True)
             acols = st.columns(5)
             for idx, h in enumerate([2, 4, 6, 12, 24]):
                 mm, pop = acc[h]
@@ -1830,6 +1859,8 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
                     f'<div class="wim-accum-val">{mm} mm</div>'
                     f'<div class="wim-accum-pop">{pop}% probability</div>'
                     f'<div class="wim-accum-risk {rc}">{risk}</div></div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div style="background:#F0FDF4;border:1px solid #86EFAC;border-radius:8px;padding:16px;text-align:center;color:#15803D;font-size:0.9rem;"><strong>No Precipitation Expected</strong><br>All operations clear — no rainfall accumulation forecasted for this period.</div>', unsafe_allow_html=True)
 
         # 2-Hour Slab Windows
         st.markdown('<div class="wim-section">2-Hour Precipitation Windows</div>', unsafe_allow_html=True)
