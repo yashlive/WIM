@@ -1697,10 +1697,40 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
 
         ds = day_summary(dh, site.get("type", "Coal Open Cast Mine"), target_day=tday); sl = ds["slabs"]
 
+        # Pre-calculate critical alerts first (to show before Forecast Advisory)
+        rain_t = ds["total_rain"]; has_l = any(s["lightning"] for s in sl); hi_w = ds["avg_wind"] >= WIND_CAUTION
+        
+        critical_html = ""  # For HIGH PRIORITY alerts that go at top
+        
+        # === CRITICAL ALERTS - Will be shown before Forecast Advisory ===
+        
+        # Worker Safety (heat/cold extremes) - HIGH PRIORITY
+        safety = worker_safety_index(dh, sl)
+        if safety:
+            # Determine if it's a critical heat alert
+            is_critical_heat = "DANGEROUS HEAT INDEX" in safety or "HIGH HEAT ALERT" in safety or "HIGH HEAT:" in safety
+            if is_critical_heat:
+                # Simple tinted styling for critical heat
+                critical_html += f'<div style="background:#FEE2E2;border:2px solid #DC2626;border-radius:8px;padding:12px 16px;margin-bottom:10px;font-size:0.85rem;color:#DC2626;font-weight:600;"><strong>CRITICAL ALERT:</strong> {safety}</div>'
+        
+        # Lightning - CRITICAL
+        if has_l:
+            lightning_msg = "Lightning detected in forecast. All blasting, drilling, and work near tall equipment must halt 30 minutes before the storm and resume only after 30 clear minutes."
+            critical_html += f'<div style="background:#F3E8FF;border:2px solid #7C3AED;border-radius:8px;padding:12px 16px;margin-bottom:10px;font-size:0.85rem;color:#7C3AED;font-weight:600;"><strong>LIGHTNING WARNING:</strong> {lightning_msg}</div>'
+        
+        # Very Heavy Rain (>15mm with high probability) - CRITICAL
+        very_heavy_rain = rain_t >= 15 and ds['max_pop'] >= 50
+        if very_heavy_rain:
+            rain_msg = f"Very heavy rainfall of {rain_t} mm forecast with {ds['max_pop']}% probability. Operations will be severely impacted."
+            critical_html += f'<div style="background:#FFF7ED;border:2px solid #EA580C;border-radius:8px;padding:12px 16px;margin-bottom:10px;font-size:0.85rem;color:#EA580C;font-weight:600;"><strong>SEVERE RAIN ALERT:</strong> {rain_msg}</div>'
+
+        # Render critical alerts BEFORE Forecast Advisory
+        if critical_html:
+            st.markdown(critical_html, unsafe_allow_html=True)
+
         # Forecast Advisory
         mine_type = site.get("type", "Coal Open Cast Mine")
         rec = smart_rec(ds, sl, tday, mine_type)
-        rain_t = ds["total_rain"]; has_l = any(s["lightning"] for s in sl); hi_w = ds["avg_wind"] >= WIND_CAUTION
         acss = ("wim-alert-high" if rain_t >= 15 or has_l else
                 "wim-alert-moderate" if rain_t >= 5 or hi_w else
                 "wim-alert-low")  # All safe conditions (dry or light rain) use green
@@ -1717,31 +1747,6 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         
         # Collect meaningful insights only
         insights_html = ""
-        critical_html = ""  # For HIGH PRIORITY alerts that go at top
-        
-        # === CRITICAL ALERTS - Always at top with enhanced styling ===
-        
-        # Worker Safety (heat/cold extremes) - HIGH PRIORITY
-        safety = worker_safety_index(dh, sl)
-        if safety:
-            # Determine if it's a critical heat alert
-            is_critical_heat = "DANGEROUS HEAT INDEX" in safety or "HIGH HEAT ALERT" in safety or "HIGH HEAT:" in safety
-            if is_critical_heat:
-                # Simple tinted styling for critical heat
-                critical_html += f'<div style="background:#FEE2E2;border:2px solid #DC2626;border-radius:8px;padding:12px 16px;margin-bottom:10px;font-size:0.85rem;color:#DC2626;font-weight:600;"><strong>CRITICAL ALERT:</strong> {safety}</div>'
-            else:
-                insights_html += f'<div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#DC2626;">{safety}</div>'
-        
-        # Lightning - CRITICAL
-        if has_l:
-            lightning_msg = "Lightning detected in forecast. All blasting, drilling, and work near tall equipment must halt 30 minutes before the storm and resume only after 30 clear minutes."
-            critical_html += f'<div style="background:#F3E8FF;border:2px solid #7C3AED;border-radius:8px;padding:12px 16px;margin-bottom:10px;font-size:0.85rem;color:#7C3AED;font-weight:600;"><strong>LIGHTNING WARNING:</strong> {lightning_msg}</div>'
-        
-        # Very Heavy Rain (>15mm with high probability) - CRITICAL
-        very_heavy_rain = rain_t >= 15 and ds['max_pop'] >= 50
-        if very_heavy_rain:
-            rain_msg = f"Very heavy rainfall of {rain_t} mm forecast with {ds['max_pop']}% probability. Operations will be severely impacted."
-            critical_html += f'<div style="background:#FFF7ED;border:2px solid #EA580C;border-radius:8px;padding:12px 16px;margin-bottom:10px;font-size:0.85rem;color:#EA580C;font-weight:600;"><strong>SEVERE RAIN ALERT:</strong> {rain_msg}</div>'
         
         # === NORMAL INSIGHTS ===
         
@@ -1784,9 +1789,8 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
             insights_html += f'<div style="background:#F3E8FF;border:1px solid #D8B4FE;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#7E22CE;">{soil}</div>'
         
         # Only render insights container if there's actual content
-        # Render CRITICAL alerts first, then normal insights
-        if critical_html or insights_html:
-            st.markdown(critical_html + insights_html, unsafe_allow_html=True)
+        if insights_html:
+            st.markdown(insights_html, unsafe_allow_html=True)
 
         # Summary Metrics
         mcols = st.columns(7)
