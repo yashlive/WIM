@@ -1672,21 +1672,21 @@ with _col_left:
         <div class="wim-site-coord">{site['lat']}° N, {site['lon']}° E</div>
     </div>""", unsafe_allow_html=True)
 
-# Display last updated timestamp
-minutes_ago = int((now_ist() - last_updated).total_seconds() / 60)
-is_stale = minutes_ago > 60
-timestamp_color = "#DC2626" if is_stale else "#64748B"
-timestamp_text = f"Updated {minutes_ago} min ago" if minutes_ago < 60 else f"Updated {minutes_ago // 60}h {minutes_ago % 60}m ago"
-refresh_badge = "<span style='background:#FEE2E2;color:#DC2626;padding:2px 8px;border-radius:4px;font-size:0.7rem;margin-left:8px;'>Refresh</span>" if is_stale else ""
-st.markdown(f'<div style="font-size:0.75rem;color:{timestamp_color};margin-top:4px;">{timestamp_text}{refresh_badge}</div>', unsafe_allow_html=True)
-
 _loading = st.empty()
 _loading.caption(f"Fetching forecast for {site['name']}…")
 by_day, mc_data, src_status = build_forecast(site["lat"], site["lon"], days)
 _loading.empty()
 
-# Store timestamp for last update
+# Store timestamp for last update immediately after fetch
 last_updated = now_ist()
+
+# Display last updated timestamp (now that last_updated is defined)
+minutes_ago = int((now_ist() - last_updated).total_seconds() / 60)
+is_stale = minutes_ago > 60
+timestamp_color = "#DC2626" if is_stale else "#64748B"
+timestamp_text = f"Updated {minutes_ago} min ago" if minutes_ago < 60 else f"Updated {minutes_ago // 60}h {minutes_ago % 60}m ago"
+refresh_badge = "<span style='background:#FEE2E2;color:#DC2626;padding:2px 8px;border-radius:4px;font-size:0.7rem;margin-left:8px;'>Refresh</span>" if is_stale else ""
+st.markdown(f'<div style="font-size:0.75rem;color:{timestamp_color};margin-top:4px;margin-bottom:12px;">{timestamp_text}{refresh_badge}</div>', unsafe_allow_html=True)
 
 if not by_day:
     _ok    = [s for s, v in src_status.items() if v == "ok"]
