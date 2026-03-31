@@ -1717,6 +1717,33 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         
         # Collect meaningful insights only
         insights_html = ""
+        critical_html = ""  # For HIGH PRIORITY alerts that go at top
+        
+        # === CRITICAL ALERTS - Always at top with enhanced styling ===
+        
+        # Worker Safety (heat/cold extremes) - HIGH PRIORITY
+        safety = worker_safety_index(dh, sl)
+        if safety:
+            # Determine if it's a critical heat alert
+            is_critical_heat = "DANGEROUS HEAT INDEX" in safety or "HIGH HEAT ALERT" in safety
+            if is_critical_heat:
+                # Enhanced styling for critical heat
+                critical_html += f'<div style="background:linear-gradient(90deg,#DC2626 0%,#EF4444 100%);border:2px solid #B91C1C;border-radius:10px;padding:14px 18px;margin-bottom:14px;font-size:0.9rem;color:#FFFFFF;font-weight:600;box-shadow:0 4px 6px -1px rgba(220,38,38,0.3);"><div style="font-size:1rem;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px;">CRITICAL ALERT</div>{safety}</div>'
+            else:
+                insights_html += f'<div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#DC2626;">{safety}</div>'
+        
+        # Lightning - CRITICAL
+        if has_l:
+            lightning_msg = "Lightning detected in forecast. All blasting, drilling, and work near tall equipment must halt 30 minutes before the storm and resume only after 30 clear minutes."
+            critical_html += f'<div style="background:linear-gradient(90deg,#7C3AED 0%,#8B5CF6 100%);border:2px solid #6D28D9;border-radius:10px;padding:14px 18px;margin-bottom:14px;font-size:0.9rem;color:#FFFFFF;font-weight:600;box-shadow:0 4px 6px -1px rgba(124,58,237,0.3);"><div style="font-size:1rem;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px;">LIGHTNING WARNING</div>{lightning_msg}</div>'
+        
+        # Very Heavy Rain (>15mm with high probability) - CRITICAL
+        very_heavy_rain = rain_t >= 15 and ds['max_pop'] >= 50
+        if very_heavy_rain:
+            rain_msg = f"Very heavy rainfall of {rain_t} mm forecast with {ds['max_pop']}% probability. Operations will be severely impacted."
+            critical_html += f'<div style="background:linear-gradient(90deg,#EA580C 0%,#F97316 100%);border:2px solid #C2410C;border-radius:10px;padding:14px 18px;margin-bottom:14px;font-size:0.9rem;color:#FFFFFF;font-weight:600;box-shadow:0 4px 6px -1px rgba(234,88,12,0.3);"><div style="font-size:1rem;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px;">SEVERE RAIN ALERT</div>{rain_msg}</div>'
+        
+        # === NORMAL INSIGHTS ===
         
         # Rain Intensity Trend (only if actually changing)
         if significant_weather:
@@ -1756,14 +1783,10 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         if soil and ("SATURATED" in soil or "SOFT" in soil):
             insights_html += f'<div style="background:#F3E8FF;border:1px solid #D8B4FE;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#7E22CE;">{soil}</div>'
         
-        # Worker Safety (heat/cold extremes only)
-        safety = worker_safety_index(dh, sl)
-        if safety:
-            insights_html += f'<div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#DC2626;">{safety}</div>'
-        
         # Only render insights container if there's actual content
-        if insights_html:
-            st.markdown(insights_html, unsafe_allow_html=True)
+        # Render CRITICAL alerts first, then normal insights
+        if critical_html or insights_html:
+            st.markdown(critical_html + insights_html, unsafe_allow_html=True)
 
         # Summary Metrics
         mcols = st.columns(7)
