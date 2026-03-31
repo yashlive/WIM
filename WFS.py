@@ -1,6 +1,6 @@
 """
 Adani Natural Resources — WIM (Weather Intelligence Mining)
-v3.0 — Supabase DB integration, clock fix, sidebar redesign,
+v3.0 — Clean version, JSON-only site management,
         hourly precipitation for all days, mining impact column
 """
 import os, json, requests, collections, base64, concurrent.futures
@@ -15,23 +15,6 @@ try:
     load_dotenv()
 except ImportError:
     pass  # python-dotenv not installed — env vars must be set another way
-
-# ── Supabase client (optional — falls back to JSON if not configured) ──
-_supabase_client = None
-def _get_supabase():
-    global _supabase_client
-    if _supabase_client is not None:
-        return _supabase_client
-    url = os.getenv("SUPABASE_URL", "")
-    key = os.getenv("SUPABASE_KEY", "")
-    if not url or not key:
-        return None
-    try:
-        from supabase import create_client
-        _supabase_client = create_client(url, key)
-        return _supabase_client
-    except Exception:
-        return None
 
 st.set_page_config(
     page_title="WIM — Weather Intelligence Mining | Adani Natural Resources",
@@ -337,24 +320,11 @@ API_WEIGHTS = {
 }
 
 # ══════════════════════════════════════════════════════════════
-# SITE MANAGEMENT — Supabase-first, JSON fallback
+# SITE MANAGEMENT — JSON only
 # ══════════════════════════════════════════════════════════════
-def _using_supabase():
-    return _get_supabase() is not None
-
 def load_sites():
-    """Load all sites. Custom sites from Supabase (or local JSON), always merged with DEFAULT_SITES."""
-    custom = []
-    sb = _get_supabase()
-    if sb:
-        try:
-            res = sb.table("mine_sites").select("*").execute()
-            custom = res.data or []
-        except Exception:
-            custom = _load_sites_json()
-    else:
-        custom = _load_sites_json()
-
+    """Load all sites. Custom sites from local JSON merged with DEFAULT_SITES."""
+    custom = _load_sites_json()
     # Merge: built-ins first, then custom (skip if same name as builtin)
     result = list(DEFAULT_SITES)
     builtin_names = {s["name"] for s in DEFAULT_SITES}
@@ -370,31 +340,12 @@ def _load_sites_json():
     except Exception: return []
 
 def save_site(name, lat, lon):
-    sb = _get_supabase()
-    if sb:
-        try:
-            # upsert based on name
-            sb.table("mine_sites").upsert(
-                {"name": name, "lat": lat, "lon": lon, "builtin": False},
-                on_conflict="name"
-            ).execute()
-            return
-        except Exception: pass
-    # fallback to JSON
     ex = _load_sites_json()
     ex = [s for s in ex if s["name"] != name]
     ex.append({"name": name, "lat": lat, "lon": lon, "builtin": False})
     with open(SITES_FILE, "w") as f: json.dump(ex, f, indent=2)
 
 def update_site(old_name, new_name, lat, lon):
-    sb = _get_supabase()
-    if sb:
-        try:
-            sb.table("mine_sites").update(
-                {"name": new_name.strip(), "lat": lat, "lon": lon}
-            ).eq("name", old_name).execute()
-            return
-        except Exception: pass
     ex = _load_sites_json()
     for s in ex:
         if s["name"] == old_name:
@@ -404,24 +355,11 @@ def update_site(old_name, new_name, lat, lon):
     with open(SITES_FILE, "w") as f: json.dump(ex, f, indent=2)
 
 def delete_site(name):
-    sb = _get_supabase()
-    if sb:
-        try:
-            sb.table("mine_sites").delete().eq("name", name).execute()
-            return
-        except Exception: pass
     ex = _load_sites_json()
     ex = [s for s in ex if s["name"] != name]
     with open(SITES_FILE, "w") as f: json.dump(ex, f, indent=2)
 
 def get_default_site():
-    sb = _get_supabase()
-    if sb:
-        try:
-            res = sb.table("app_settings").select("value").eq("key", "default_site").execute()
-            if res.data: return res.data[0]["value"]
-        except Exception: pass
-    # fallback: local file
     _f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default_site.json")
     try:
         if os.path.exists(_f):
@@ -430,15 +368,6 @@ def get_default_site():
     return None
 
 def set_default_site(name):
-    sb = _get_supabase()
-    if sb:
-        try:
-            sb.table("app_settings").upsert(
-                {"key": "default_site", "value": name},
-                on_conflict="key"
-            ).execute()
-            return
-        except Exception: pass
     _f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default_site.json")
     with open(_f, "w") as f: json.dump({"name": name}, f)
 
@@ -1002,10 +931,14 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
             parts.append("Pit drainage must be inspected before morning shift. Bench and haul road surfaces will be severely impacted — mandatory post-rain ground assessment required before resuming OB removal, excavator, and dozer work. Deploy ore stockpile covers.")
     elif mod_sl:
         first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]; fp = rain_sl[0]["pop"]; lp = rain_sl[-1]["pop"]
+        # Format time range professionally - show start to end, not "through"
+        first_start = first.split('–')[0].strip() if '–' in first else first.split('-')[0].strip()
+        last_end = last.split('–')[1].strip() if '–' in last else last.split('-')[1].strip()
+        time_range = f"{first_start} – {last_end}"
         if pop >= 15:
-            parts.append(f"Moderate rainfall of {rain} mm is forecast from {first} through {last} with probability ranging {fp}–{lp}%.")
+            parts.append(f"Moderate rainfall of {rain} mm is forecast from {time_range} with probability ranging {fp}–{lp}%.")
         else:
-            parts.append(f"Moderate rainfall of {rain} mm is forecast from {first} through {last}.")
+            parts.append(f"Moderate rainfall of {rain} mm is forecast from {time_range}.")
         if pop < 15:
             parts.append("Intermittent showers expected. Surface impact minimal — operations can continue with standard wet-weather protocols.")
         elif pop < 40:
@@ -1018,7 +951,11 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
             parts.append("Plan ore loading and dispatch in the pre-rain dry window. Allow 1–2 hours post-rain drainage assessment before resuming heavy equipment on active benches. Check blast hole integrity before charging.")
     elif rain_sl and pop >= 15:
         first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]; fp = rain_sl[0]["pop"]
-        parts.append(f"Light rainfall of {rain} mm is expected between {first} and {last}.")
+        # Format time range professionally
+        first_start = first.split('–')[0].strip() if '–' in first else first.split('-')[0].strip()
+        last_end = last.split('–')[1].strip() if '–' in last else last.split('-')[1].strip()
+        time_range = f"{first_start} – {last_end}"
+        parts.append(f"Light rainfall of {rain} mm is expected {time_range}.")
         if pop < 35:
             parts.append(f"Low probability ({pop}%) indicates intermittent drizzle. Surface impact minimal — operations can continue with standard wet-weather protocols.")
         elif pop > 60:
@@ -1496,23 +1433,19 @@ def render_weekly(by_day, days, site_type="Coal Open Cast Mine"):
             <div class="wim-day-label">{lbl}</div>
             <div class="wim-day-date">{d.strftime('%d %b')}</div>
             <div class="wim-day-cond">{s['condition']}</div>
-            <div class="wim-day-rain">{f"{rain} mm" if rain >= 0.5 and s['max_pop'] >= 15 else "0.0 mm"}{f" · {s['max_pop']}%" if rain >= 0.5 and s['max_pop'] >= 15 else ""}</div>
+            <div class="wim-day-rain">{f"{rain} mm" if rain >= 0.5 else "0.0 mm"}{f" · {s['max_pop']}%" if rain >= 0.5 and s['max_pop'] >= 15 else ""}</div>
             <div class="wim-day-temp">{s['max_temp']}° / {s['min_temp']}°C</div>
             <span class="wim-day-flag {fcss}">{flag}</span>
         </div>""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════
-# SIDEBAR — redesigned with Supabase status indicator
+# SIDEBAR — site management
 # ══════════════════════════════════════════════════════════════
 def render_sidebar():
     sites = load_sites()
     names = [s["name"] for s in sites]
     _SH   = 'font-size:0.7rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#94A3B8;'
     _HR   = '<hr style="border:none;border-top:1px solid #E2E8F0;margin:14px 0;">'
-
-    # DB status badge
-    db_badge = '<span class="db-badge-ok">Supabase ✓</span>' if _using_supabase() else '<span class="db-badge-local">Local JSON</span>'
-    st.markdown(f'<div style="margin-bottom:12px;">{db_badge}</div>', unsafe_allow_html=True)
 
     # ── Mine Sites List ──
     st.markdown(f'<p style="{_SH}margin:0 0 8px 0;">Mine Sites</p>', unsafe_allow_html=True)
@@ -1835,12 +1768,12 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         # Summary Metrics
         mcols = st.columns(7)
         cloud_val = f"{int(ds['cloud'])}%" if ds.get('cloud') else "—"
-        # Only show rain metrics if probability is meaningful
-        show_rain_metrics = rain_t > 0 and ds['max_pop'] >= 15
+        # Always show actual rain amount; only gate probability display
+        show_rain_prob = rain_t > 0 and ds['max_pop'] >= 15
         for col, (lbl, val) in zip(mcols, [
             ("Condition", ds["condition"]), ("Max Temp", f"{ds['max_temp']}°C"),
-            ("Min Temp", f"{ds['min_temp']}°C"),            ("Total Rain", f"{rain_t} mm" if show_rain_metrics else "0 mm"),
-            ("Rain Prob.", f"{ds['max_pop']}%" if show_rain_metrics else "0%"), ("Wind", f"{ds['avg_wind']} km/h"),
+            ("Min Temp", f"{ds['min_temp']}°C"),            ("Total Rain", f"{rain_t} mm"),
+            ("Rain Prob.", f"{ds['max_pop']}%" if show_rain_prob else "0%"), ("Wind", f"{ds['avg_wind']} km/h"),
             ("Cloud Cover", cloud_val),
         ]):
             col.markdown(f'<div class="wim-metric"><div class="wim-metric-label">{lbl}</div><div class="wim-metric-value">{val}</div></div>', unsafe_allow_html=True)
