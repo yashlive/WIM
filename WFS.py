@@ -1725,7 +1725,7 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         safety = worker_safety_index(dh, sl)
         if safety:
             # Determine if it's a critical heat alert
-            is_critical_heat = "DANGEROUS HEAT INDEX" in safety or "HIGH HEAT ALERT" in safety
+            is_critical_heat = "DANGEROUS HEAT INDEX" in safety or "HIGH HEAT ALERT" in safety or "HIGH HEAT:" in safety
             if is_critical_heat:
                 # Enhanced styling for critical heat
                 critical_html += f'<div style="background:linear-gradient(90deg,#DC2626 0%,#EF4444 100%);border:2px solid #B91C1C;border-radius:10px;padding:14px 18px;margin-bottom:14px;font-size:0.9rem;color:#FFFFFF;font-weight:600;box-shadow:0 4px 6px -1px rgba(220,38,38,0.3);"><div style="font-size:1rem;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:8px;">CRITICAL ALERT</div>{safety}</div>'
