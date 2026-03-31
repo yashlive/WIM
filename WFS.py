@@ -922,7 +922,7 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
         parts.append(f"{dlabel} is likely dry with a {pop}% chance of isolated showers. Schedule blasting in morning hours and monitor sky conditions before afternoon shift.")
     elif heavy_sl:
         hw = heavy_sl[0]["label"]; hp = heavy_sl[0]["pop"]
-        parts.append(f"Heavy rainfall totaling {rain} mm is expected {dlabel.lower()}, peaking around {hw} ({hp}% probability).<br><br>")
+        parts.append(f"Heavy rainfall totaling {rain} mm is expected {dlabel.lower()}, peaking around {hw} ({hp}% probability).<br>")
         if pop < 50:
             parts.append(f"Despite moderate probability ({pop}%), rainfall intensity is high. Prepare drainage but consider proceeding with morning operations before {hw.split('–')[0].strip()}.")
         if "Coal" in mine_type:
@@ -936,9 +936,9 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
         last_end = last.split('–')[1].strip() if '–' in last else last.split('-')[1].strip()
         time_range = f"{first_start} – {last_end}"
         if pop >= 15:
-            parts.append(f"Moderate rainfall of {rain} mm is forecast from {time_range} with probability ranging {fp}–{lp}%.<br><br>")
+            parts.append(f"Moderate rainfall of {rain} mm is forecast from {time_range} with probability ranging {fp}–{lp}%.<br>")
         else:
-            parts.append(f"Moderate rainfall of {rain} mm is forecast from {time_range}.<br><br>")
+            parts.append(f"Moderate rainfall of {rain} mm is forecast from {time_range}.<br>")
         if pop < 15:
             parts.append("Intermittent showers expected. Surface impact minimal — operations can continue with standard wet-weather protocols.")
         elif pop < 40:
@@ -955,7 +955,7 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
         first_start = first.split('–')[0].strip() if '–' in first else first.split('-')[0].strip()
         last_end = last.split('–')[1].strip() if '–' in last else last.split('-')[1].strip()
         time_range = f"{first_start} – {last_end}"
-        parts.append(f"Light rainfall of {rain} mm is expected {time_range} ({fp}% probability).<br><br>")
+        parts.append(f"Light rainfall of {rain} mm is expected {time_range} ({fp}% probability).<br>")
         if pop < 35:
             parts.append(f"Low probability ({pop}%) indicates intermittent drizzle. Surface impact minimal — operations can continue with standard wet-weather protocols.")
         elif pop > 60:
