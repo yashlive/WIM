@@ -479,12 +479,16 @@ def mining_impact_html(mm, wind, vis, lightning):
     return '<span class="wim-badge b-clear-ops">Clear</span>'
 
 def condition_str(total, descs, max_pop=0):
-    # Smart logic: Consider both rainfall amount AND probability
-    # Prioritize API weather descriptions for rain type
+    """Determine weather condition based on actual rainfall amount and probability, not just API descriptions"""
     
-    # Analyze weather descriptions from multiple sources
+    # NO RAIN or negligible conditions - always return Clear regardless of API descriptions
+    # Threshold: < 0.5mm rain OR < 15% probability = treat as clear/dry
+    if total < 0.5 or max_pop < 15:
+        return "Clear"
+    
+    # Analyze weather descriptions from multiple sources only when there's actual rain
     rain_types = []
-    if descs:
+    if descs and total >= 0.5:
         for desc in descs:
             desc_lower = desc.lower()
             if any(word in desc_lower for word in ["heavy", "torrential", "downpour", "storm", "thunderstorm"]):
@@ -517,11 +521,11 @@ def condition_str(total, descs, max_pop=0):
     # Light rainfall but low probability - downgrade to drizzle
     elif total >= 1.5 and max_pop < 45: 
         return "Drizzle"
-    elif total > 0: 
+    elif total >= 0.5: 
         return "Drizzle"
     
-    # Use API descriptions as primary source when no rain
-    if api_rain_type:
+    # Fallback to API descriptions only if we have actual rain but no match above
+    if api_rain_type and total >= 0.5:
         if api_rain_type == "heavy": return "Heavy Rain"
         if api_rain_type == "moderate": return "Moderate Rain"
         if api_rain_type == "light": return "Light Rain"
@@ -1066,11 +1070,16 @@ def rain_accum(hourly, target_day=None):
 # ADVANCED OPERATIONAL INSIGHTS
 # ══════════════════════════════════════════════════════════════
 def rain_intensity_trend(slabs, min_pop_threshold=40):
-    """Analyze if rain is intensifying or weakening across time windows"""
-    # Only consider slabs with meaningful rain AND decent probability
-    rain_slabs = [s for s in slabs if s["mm"] > 0 and s["pop"] >= min_pop_threshold]
+    """Analyze rainfall progression for operational planning — only for meaningful precipitation (5mm+)"""
+    # Only consider slabs with meaningful rain (≥2mm in a window) AND decent probability
+    rain_slabs = [s for s in slabs if s["mm"] >= 2.0 and s["pop"] >= min_pop_threshold]
     if len(rain_slabs) < 2:
         return None
+    
+    # Calculate total meaningful rain
+    total_rain = sum(s["mm"] for s in rain_slabs)
+    if total_rain < 5.0:
+        return None  # Don't show trend for light drizzle (< 5mm total)
     
     first_mm = rain_slabs[0]["mm"]
     last_mm = rain_slabs[-1]["mm"]
@@ -1079,12 +1088,13 @@ def rain_intensity_trend(slabs, min_pop_threshold=40):
     first_pop = rain_slabs[0]["pop"]
     last_pop = rain_slabs[-1]["pop"]
     
-    if last_mm > first_mm * 1.5 and last_pop >= min_pop_threshold:
-        return f"⚠️ Rain is INTENSIFYING — heaviest period expected around {last_label.split('–')[0].strip()} with {last_pop}% probability. Complete critical operations before then."
-    elif first_mm > last_mm * 1.5 and first_pop >= min_pop_threshold:
-        return f"✓ Rain is WEAKENING — conditions improving after {first_label.split('–')[0].strip()}. Operations can resume with standard protocols."
+    # Significant change threshold: 2x difference
+    if last_mm > first_mm * 2.0 and last_pop >= min_pop_threshold:
+        return f"Precipitation increasing throughout the day — peak intensity expected around {last_label.split('–')[0].strip()} ({last_mm:.1f} mm, {last_pop}% probability). Consider completing critical operations earlier."
+    elif first_mm > last_mm * 2.0 and first_pop >= min_pop_threshold:
+        return f"Precipitation decreasing throughout the day — conditions improving after {first_label.split('–')[0].strip()}. Operations may resume standard protocols once rainfall subsides."
     else:
-        return f"→ Rain intensity STABLE across periods — consistent {first_mm}–{last_mm} mm per window with {first_pop}–{last_pop}% probability. Plan uniform work distribution."
+        return None  # Don't show message for stable/light conditions
 
 def operational_window_optimizer(slabs, min_vis=5.0, max_wind=30, max_rain=1.0):
     """Find best continuous 4-hour work windows for operations"""
@@ -1115,10 +1125,10 @@ def operational_window_optimizer(slabs, min_vis=5.0, max_wind=30, max_rain=1.0):
         safe_windows.append((current_start, current_duration))
     
     if not safe_windows:
-        return "⚠️ No continuous 4-hour safe windows found. Consider shorter work cycles or waiting for conditions to improve."
+        return "No continuous 4-hour safe windows identified. Consider shorter work cycles or deferring operations until conditions improve."
     
     best = safe_windows[0]
-    return f"✓ Best operational window: {best[0]} ({best[1]} hours). Schedule high-precision activities (blasting, heavy lifts) during this period."
+    return f"Optimal operational window: {best[0]} ({best[1]} hours continuous). Schedule precision activities (blasting, heavy lifts) during this period."
 
 def equipment_specific_advisories(slabs, hourly=None, mine_type="Coal Open Cast Mine"):
     """Generate equipment-specific operational guidance"""
@@ -1179,11 +1189,11 @@ def dust_risk_index(slabs, hourly):
     
     # High dust risk: windy + dry + no rain
     if avg_wind >= 25 and avg_hum < 40 and total_rain < 1:
-        return f"🔴 HIGH DUST RISK: Wind {avg_wind:.0f} km/h + Low humidity {avg_hum:.0f}% + No rain. Deploy water bowsers every 2 hours. Mandatory dust masks in exposed areas."
+        return f"HIGH DUST RISK: Wind {avg_wind:.0f} km/h with low humidity {avg_hum:.0f}% and no precipitation. Deploy water bowsers every 2 hours. Mandatory dust masks in exposed areas."
     elif avg_wind >= 20 and avg_hum < 50 and total_rain < 2:
-        return f"🟡 MODERATE DUST RISK: Conditions favor dust dispersal. Increase water suppression on haul roads."
+        return f"MODERATE DUST RISK: Conditions favor dust dispersal. Increase water suppression on haul roads."
     elif total_rain >= 5 or avg_hum > 70:
-        return f"🟢 LOW DUST RISK: Rain/humidity suppressing dust. Standard protocols sufficient."
+        return f"LOW DUST RISK: Precipitation and humidity suppressing dust. Standard protocols sufficient."
     return None
 
 def fog_dew_prediction(hourly, target_day):
@@ -1203,9 +1213,9 @@ def fog_dew_prediction(hourly, target_day):
     
     # Fog conditions: high humidity + low temp + clear skies
     if avg_hum > 85 and min_temp < 15:
-        return f"🌫️ FOG ALERT: High overnight humidity ({avg_hum:.0f}%) + low temp ({min_temp:.1f}°C) = Dense fog likely. Reduce haul truck speed by 50%. Activate fog lights."
+        return f"FOG ALERT: High overnight humidity ({avg_hum:.0f}%) with low temperature ({min_temp:.1f}°C) indicates dense fog likely. Reduce haul truck speed by 50%. Activate fog lights."
     elif avg_hum > 75 and min_temp < 18:
-        return f"💧 HEAVY DEW: Moderate fog/dew expected. Wet benches — traction reduced. Delay drilling until visibility improves."
+        return f"HEAVY DEW: Moderate fog or dew expected. Wet benches will reduce traction. Delay drilling until visibility improves."
     return None
 
 def soil_moisture_forecast(slabs, past_rain_24h=0):
@@ -1214,11 +1224,11 @@ def soil_moisture_forecast(slabs, past_rain_24h=0):
     cumulative = past_rain_24h + total_rain
     
     if cumulative >= 25:
-        return f"🟤 SATURATED GROUND: {cumulative:.1f}mm cumulative rain. Haul roads will likely be muddy. Use low gear, increase following distance. Slope stability concerns on high benches."
+        return f"SATURATED GROUND: {cumulative:.1f}mm cumulative rain. Haul roads will likely be muddy. Use low gear, increase following distance. Slope stability concerns on high benches."
     elif cumulative >= 15:
-        return f"🟠 SOFT GROUND: {cumulative:.1f}mm rain accumulation. Expect rutting on haul roads. Deploy motor grader. Reduced productivity 15-20%."
+        return f"SOFT GROUND: {cumulative:.1f}mm rain accumulation. Expect rutting on haul roads. Deploy motor grader. Reduced productivity 15-20%."
     elif cumulative >= 5:
-        return f"🟡 DAMP GROUND: {cumulative:.1f}mm total moisture. Firm but watch soft spots. Standard precautions."
+        return f"DAMP GROUND: {cumulative:.1f}mm total moisture. Surface firm but monitor for soft spots. Standard precautions apply."
     return None
 
 def worker_safety_index(hourly, slabs):
@@ -1229,17 +1239,17 @@ def worker_safety_index(hourly, slabs):
     
     # Heat stress conditions
     if max_temp >= 40:
-        return f"🔥 HIGH HEAT ALERT: Max {max_temp:.1f}°C. Ensure workers stay hydrated and rest shelters are available. Watch for heat exhaustion symptoms."
+        return f"HIGH HEAT ALERT: Maximum temperature {max_temp:.1f}°C. Ensure workers stay hydrated and rest shelters are available. Watch for heat exhaustion symptoms."
     elif max_temp >= 38:
-        return f"🌡️ HIGH HEAT: {max_temp:.1f}°C peak. Ensure workers stay hydrated and rest shelters are available."
+        return f"HIGH HEAT: {max_temp:.1f}°C peak temperature. Ensure workers stay hydrated and rest shelters are available."
     elif max_temp <= 10:
-        return f"❄️ COLD CONDITIONS: Low {min_temp:.1f}°C. Hypothermia risk for night shift. Provide warming shelters."
+        return f"COLD CONDITIONS: Low temperature {min_temp:.1f}°C. Hypothermia risk for night shift. Provide warming shelters."
     
     # Check for dangerous combination: heat + high humidity
     avg_hum = sum(s["hum"] for s in slabs) / len(slabs) if slabs else 50
     heat_index = max_temp + (avg_hum * 0.1)
     if heat_index >= 45:
-        return f"⚠️ DANGEROUS HEAT INDEX: {heat_index:.1f}°C apparent temp. Suspend non-essential outdoor work during peak heat hours."
+        return f"DANGEROUS HEAT INDEX: Apparent temperature {heat_index:.1f}°C. Suspend non-essential outdoor work during peak heat hours."
     
     return None
 
