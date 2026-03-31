@@ -1711,18 +1711,18 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
             is_critical_heat = "DANGEROUS HEAT INDEX" in safety or "HIGH HEAT ALERT" in safety or "HIGH HEAT:" in safety
             if is_critical_heat:
                 # Simple tinted styling for critical heat
-                critical_html += f'<div style="background:#FEE2E2;border:2px solid #DC2626;border-radius:8px;padding:12px 16px;margin-bottom:10px;font-size:0.85rem;color:#DC2626;font-weight:600;"><strong>CRITICAL ALERT:</strong> {safety}</div>'
+                critical_html += f'<div style="background:#FEE2E2;border:1px solid #DC2626;border-radius:6px;padding:10px 14px;margin-bottom:10px;font-size:0.85rem;color:#DC2626;font-weight:600;"><strong>CRITICAL ALERT:</strong> {safety}</div>'
         
         # Lightning - CRITICAL
         if has_l:
             lightning_msg = "Lightning detected in forecast. All blasting, drilling, and work near tall equipment must halt 30 minutes before the storm and resume only after 30 clear minutes."
-            critical_html += f'<div style="background:#F3E8FF;border:2px solid #7C3AED;border-radius:8px;padding:12px 16px;margin-bottom:10px;font-size:0.85rem;color:#7C3AED;font-weight:600;"><strong>LIGHTNING WARNING:</strong> {lightning_msg}</div>'
+            critical_html += f'<div style="background:#F3E8FF;border:1px solid #7C3AED;border-radius:6px;padding:10px 14px;margin-bottom:10px;font-size:0.85rem;color:#7C3AED;font-weight:600;"><strong>LIGHTNING WARNING:</strong> {lightning_msg}</div>'
         
         # Very Heavy Rain (>15mm with high probability) - CRITICAL
         very_heavy_rain = rain_t >= 15 and ds['max_pop'] >= 50
         if very_heavy_rain:
             rain_msg = f"Very heavy rainfall of {rain_t} mm forecast with {ds['max_pop']}% probability. Operations will be severely impacted."
-            critical_html += f'<div style="background:#FFF7ED;border:2px solid #EA580C;border-radius:8px;padding:12px 16px;margin-bottom:10px;font-size:0.85rem;color:#EA580C;font-weight:600;"><strong>SEVERE RAIN ALERT:</strong> {rain_msg}</div>'
+            critical_html += f'<div style="background:#FFF7ED;border:1px solid #EA580C;border-radius:6px;padding:10px 14px;margin-bottom:10px;font-size:0.85rem;color:#EA580C;font-weight:600;"><strong>SEVERE RAIN ALERT:</strong> {rain_msg}</div>'
 
         # Render critical alerts BEFORE Forecast Advisory
         if critical_html:
