@@ -947,13 +947,15 @@ def day_summary(hourly, mine_type="Coal Open Cast Mine", target_day=None):
     
     total  = round(sum(rains), 1)
     descs  = [d["desc"] for _, d in hourly if d["desc"]]
+    # Use 75th percentile for probability (consistent across all functions)
+    max_pop_val = int(round(sorted(pops)[int(len(pops)*0.75)] if pops else 0, 0))
     
     return dict(
         max_temp=round(max(temps), 1) if temps else "—", 
         min_temp=round(min(temps), 1) if temps else "—",
         total_rain=total, 
-        max_pop=int(round(sorted(pops)[int(len(pops)*0.75)] if pops else 0, 0)),  # Use 75th percentile instead of max
-        condition=condition_str(total, descs, max(pops) if pops else 0),
+        max_pop=max_pop_val,
+        condition=condition_str(total, descs, max_pop_val),
         humidity=round(sum(hums) / len(hums), 1) if hums else 0,
         cloud=round(sum(clouds) / len(clouds), 0) if clouds else None,
         avg_wind=round(sum(winds) / len(winds), 1) if winds else 0, 
@@ -1479,13 +1481,14 @@ def render_weekly(by_day, days, site_type="Coal Open Cast Mine"):
         mine_type_current = site_type  # Use the passed site_type for consistency
         
         # Use smart rain classification with probability (same as condition_str logic)
+        # Thresholds: < 0.5mm or < 15% pop = Clear (not drizzle)
         if rain >= 15 and max_pop >= 25:             flag, fcss = "Heavy Rain", "flag-heavy"
         elif rain >= 15 and max_pop < 25:           flag, fcss = "Moderate Risk", "flag-moderate"
         elif rain >= 5 and max_pop >= 35:            flag, fcss = "Moderate Risk", "flag-moderate"
         elif rain >= 5 and max_pop < 35:              flag, fcss = "Light Rain", "flag-light"
         elif rain >= 1.5 and max_pop >= 45:          flag, fcss = "Light Rain", "flag-light"
         elif rain >= 1.5 and max_pop < 45:           flag, fcss = "Drizzle", "flag-drizzle"
-        elif rain > 0 and max_pop >= 15:          flag, fcss = "Drizzle", "flag-drizzle"
+        elif rain >= 0.5 and max_pop >= 15:          flag, fcss = "Drizzle", "flag-drizzle"
         elif has_l:                                  flag, fcss = "Lightning Risk", "flag-lightning"
         else:                                         flag, fcss = "Clear", "flag-clear"
         day_css = "wim-day wim-day-active" if i == 0 else "wim-day"
@@ -1493,7 +1496,7 @@ def render_weekly(by_day, days, site_type="Coal Open Cast Mine"):
             <div class="wim-day-label">{lbl}</div>
             <div class="wim-day-date">{d.strftime('%d %b')}</div>
             <div class="wim-day-cond">{s['condition']}</div>
-            <div class="wim-day-rain">{f"{rain} mm" if rain > 0 and s['max_pop'] >= 15 else "0.0 mm"}{f" · {s['max_pop']}%" if rain > 0 and s['max_pop'] >= 15 else ""}</div>
+            <div class="wim-day-rain">{f"{rain} mm" if rain >= 0.5 and s['max_pop'] >= 15 else "0.0 mm"}{f" · {s['max_pop']}%" if rain >= 0.5 and s['max_pop'] >= 15 else ""}</div>
             <div class="wim-day-temp">{s['max_temp']}° / {s['min_temp']}°C</div>
             <span class="wim-day-flag {fcss}">{flag}</span>
         </div>""", unsafe_allow_html=True)
