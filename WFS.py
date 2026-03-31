@@ -297,7 +297,8 @@ DEFAULT_SITES = [
     {"id": "builtin-parsa",      "name": "Parsa",           "lat": 22.824950, "lon": 82.804340, "type": "Coal Open Cast Mine", "builtin": True},
     {"id": "builtin-talabira",   "name": "Talabira",       "lat": 21.756317, "lon": 83.970446, "type": "Coal Open Cast Mine", "builtin": True},
     {"id": "builtin-gare-pelma", "name": "Gare Pelma",     "lat": 22.185835, "lon": 83.496813, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-kurmitar",   "name": "Kurmitar",       "lat": 21.754655, "lon": 85.161185, "type": "Iron Ore Mine", "builtin": True},
+    {"id": "builtin-kurmitar",   "name": "Kurmitar",       "lat": 21.749766, "lon": 85.167471, "type": "Iron Ore Mine", "builtin": True},
+    {"id": "builtin-taldih",     "name": "Taldih",         "lat": 21.91056, "lon": 85.18014, "type": "Iron Ore Mine", "builtin": True},
 ]
 IST       = pytz.timezone('Asia/Kolkata')
 UTC       = pytz.utc
