@@ -963,14 +963,25 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
             parts.append(f"Moderate-to-high probability ({pop}%) suggests sustained light rain. Expect haul road surface degradation — deploy grader for maintenance.")
         else:
             parts.append("Operational impact is minimal. Inspect blast area for surface water before charging holes.")
-    elif rain > 0 and rain < 0.5 and pop < 15:
+    elif rain >= 0.5 and pop < 15:
+        # Low probability rain - rain expected but models disagree on timing
+        if rain_sl:
+            first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]
+            first_start = first.split('–')[0].strip() if '–' in first else first.split('-')[0].strip()
+            last_end = last.split('–')[1].strip() if '–' in last else last.split('-')[1].strip()
+            time_range = f"{first_start} – {last_end}"
+            parts.append(f"Light rainfall of {rain} mm is forecast {time_range}.<br>")
+        else:
+            parts.append(f"Light rainfall of {rain} mm is forecast {dlabel.lower()}.<br>")
+        parts.append(f"Forecast models show only {pop}% confidence in timing. Conditions may remain dry. Standard operations with rain gear standby recommended.")
+    elif rain > 0 and rain < 0.5 and pop > 0 and pop < 15:
         # Very light rain / trace amounts with low probability - uncertain language
         parts.append(f"Trace precipitation ({rain} mm) may occur {dlabel.lower()} with only {pop}% probability. It may rain briefly or may remain completely dry.<br>")
         parts.append("Operational impact is expected to be negligible. Standard operations may proceed, with minimal rain gear standby as precaution.")
-    elif pop > 0 and pop < 15 and not rain_sl:
-        # No measurable rain but some probability exists
+    elif pop >= 15 and not rain_sl:
+        # No measurable rain but decent probability exists
         parts.append(f"{dlabel} is expected to remain largely dry, though there is a {pop}% chance of brief, isolated drizzle that may not register on gauges.<br>")
-        parts.append("No operational impact anticipated. Proceed with standard protocols but monitor sky conditions if {pop}% chance materializes.")
+        parts.append("No operational impact anticipated. Proceed with standard protocols but monitor sky conditions.")
 
     if has_l:
         lt = [s["label"] for s in slabs if s["lightning"]]
@@ -1427,14 +1438,14 @@ def render_weekly(by_day, days, site_type="Coal Open Cast Mine"):
         mine_type_current = site_type  # Use the passed site_type for consistency
         
         # Use smart rain classification with probability (same as condition_str logic)
-        # Thresholds: < 0.5mm or < 15% pop = Clear (not drizzle)
+        # Thresholds: < 0.5mm = Clear; >= 0.5mm = Drizzle (regardless of pop)
         if rain >= 15 and max_pop >= 25:             flag, fcss = "Heavy Rain", "flag-heavy"
         elif rain >= 15 and max_pop < 25:           flag, fcss = "Moderate Risk", "flag-moderate"
         elif rain >= 5 and max_pop >= 35:            flag, fcss = "Moderate Risk", "flag-moderate"
         elif rain >= 5 and max_pop < 35:              flag, fcss = "Light Rain", "flag-light"
         elif rain >= 1.5 and max_pop >= 45:          flag, fcss = "Light Rain", "flag-light"
         elif rain >= 1.5 and max_pop < 45:           flag, fcss = "Drizzle", "flag-drizzle"
-        elif rain >= 0.5 and max_pop >= 15:          flag, fcss = "Drizzle", "flag-drizzle"
+        elif rain >= 0.5:                            flag, fcss = "Drizzle", "flag-drizzle"
         elif has_l:                                  flag, fcss = "Lightning Risk", "flag-lightning"
         else:                                         flag, fcss = "Clear", "flag-clear"
         day_css = "wim-day wim-day-active" if i == 0 else "wim-day"
