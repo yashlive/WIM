@@ -296,7 +296,10 @@ DEFAULT_SITES = [
     {"id": "builtin-dhirauli",   "name": "Dhirauli",        "lat": 23.936440, "lon": 82.358836, "type": "Coal Open Cast Mine", "builtin": True},
     {"id": "builtin-parsa",      "name": "Parsa",           "lat": 22.824950, "lon": 82.804340, "type": "Coal Open Cast Mine", "builtin": True},
     {"id": "builtin-talabira",   "name": "Talabira",       "lat": 21.756317, "lon": 83.970446, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-gare-pelma", "name": "Gare Pelma",     "lat": 22.185835, "lon": 83.496813, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-gare-pelma", "name": "GP III",             "lat": 22.105303, "lon": 83.292822, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-gp-ii",      "name": "GP II",            "lat": 22.160838, "lon": 83.472457, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-pcb",        "name": "PCB",              "lat": 22.8464571, "lon": 82.7756377, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-pekb",       "name": "PEKB",             "lat": 22.8215920, "lon": 82.8162617, "type": "Coal Open Cast Mine", "builtin": True},
     {"id": "builtin-kurmitar",   "name": "Kurmitar",       "lat": 21.749766, "lon": 85.167471, "type": "Iron Ore Mine", "builtin": True},
     {"id": "builtin-taldih",     "name": "Taldih",         "lat": 21.91056, "lon": 85.18014, "type": "Iron Ore Mine", "builtin": True},
 ]
