@@ -963,6 +963,14 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
             parts.append(f"Moderate-to-high probability ({pop}%) suggests sustained light rain. Expect haul road surface degradation — deploy grader for maintenance.")
         else:
             parts.append("Operational impact is minimal. Inspect blast area for surface water before charging holes.")
+    elif rain > 0 and rain < 0.5 and pop < 15:
+        # Very light rain / trace amounts with low probability - uncertain language
+        parts.append(f"Trace precipitation ({rain} mm) may occur {dlabel.lower()} with only {pop}% probability. It may rain briefly or may remain completely dry.<br>")
+        parts.append("Operational impact is expected to be negligible. Standard operations may proceed, with minimal rain gear standby as precaution.")
+    elif pop > 0 and pop < 15 and not rain_sl:
+        # No measurable rain but some probability exists
+        parts.append(f"{dlabel} is expected to remain largely dry, though there is a {pop}% chance of brief, isolated drizzle that may not register on gauges.<br>")
+        parts.append("No operational impact anticipated. Proceed with standard protocols but monitor sky conditions if {pop}% chance materializes.")
 
     if has_l:
         lt = [s["label"] for s in slabs if s["lightning"]]
