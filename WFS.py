@@ -412,8 +412,8 @@ def condition_str(total, descs, max_pop=0):
     """Determine weather condition based on actual rainfall amount and probability, not just API descriptions"""
     
     # NO RAIN or negligible conditions - always return Clear regardless of API descriptions
-    # Threshold: < 0.5mm rain OR < 15% probability = treat as clear/dry
-    if total < 0.5 or max_pop < 15:
+    # Threshold: < 0.5mm rain = treat as clear/dry (ignore probability for drizzle classification)
+    if total < 0.5:
         return "Clear"
     
     # Analyze weather descriptions from multiple sources only when there's actual rain
@@ -864,9 +864,6 @@ def day_summary(hourly, mine_type="Coal Open Cast Mine", target_day=None):
     today = now_ist().date()
     is_today = (target_day == today) if target_day else False
     
-    # Mine-specific validation
-    is_iron_ore = "Iron Ore" in mine_type
-    
     temps  = [d["temp"] for _, d in hourly]
     rains  = [d["rain_mm"] for _, d in hourly]
     pops   = [d["pop"] for _, d in hourly]
@@ -945,7 +942,7 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
         elif pop < 40:
             parts.append(f"Lower probability ({pop}%) suggests showers may be scattered. Prioritize operations in drier morning window. Keep rain gear and drainage pumps on standby.")
         elif pop > 70:
-            parts.append(f"High confidence ({pop}% probability) rain will occur. Shift high-precision blasting to alternate day if possible.")
+            parts.append(f"High confidence ({pop}% probability) indicates that rain will occur. Shift high-precision blasting to alternate day if possible.")
         if "Coal" in mine_type:
             parts.append("Plan coal loading and dispatch in the pre-rain dry window. Allow 1–2 hours post-rain drainage assessment before resuming heavy equipment on active benches. Check blast hole integrity before charging.")
         else:
@@ -973,7 +970,7 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
             parts.append(f"Light rainfall of {rain} mm is forecast {time_range}.<br>")
         else:
             parts.append(f"Light rainfall of {rain} mm is forecast {dlabel.lower()}.<br>")
-        parts.append(f"Forecast models show only {pop}% confidence in timing. Conditions may remain dry. Standard operations with rain gear standby recommended.")
+        parts.append(f"Low probability ({pop}%) of {rain} mm precipitation. Standard operations with minimal rain gear standby recommended.")
     elif rain > 0 and rain < 0.5 and pop > 0 and pop < 15:
         # Very light rain / trace amounts with low probability - uncertain language
         parts.append(f"Trace precipitation ({rain} mm) may occur {dlabel.lower()} with only {pop}% probability. It may rain briefly or may remain completely dry.<br>")
@@ -1488,7 +1485,7 @@ def render_sidebar():
     active_obj = next((s for s in sites if s["name"] == st.session_state.active_site), None)
     with st.expander("✏️  Edit selected site", expanded=False):
         if active_obj and active_obj.get("builtin"):
-            st.info("Suliyari is a built-in site and cannot be edited.")
+            st.info(f"{active_obj['name']} is a built-in site and cannot be edited.")
         elif active_obj:
             with st.form("edit_site_form"):
                 e_name = st.text_input("Name", value=active_obj["name"])
