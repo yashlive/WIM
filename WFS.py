@@ -1450,7 +1450,7 @@ def render_weekly(by_day, days, site_type="Coal Open Cast Mine"):
             <div class="wim-day-label">{lbl}</div>
             <div class="wim-day-date">{d.strftime('%d %b')}</div>
             <div class="wim-day-cond">{s['condition']}</div>
-            <div class="wim-day-rain">{f"{rain} mm" if rain >= 0.5 else "0.0 mm"}{f" · {s['max_pop']}%" if rain >= 0.5 and s['max_pop'] >= 15 else ""}</div>
+            <div class="wim-day-rain">{f"{rain} mm" if rain >= 0.5 else "0.0 mm"}{f" · {s['max_pop']}%" if rain >= 0.5 else ""}</div>
             <div class="wim-day-temp">{s['max_temp']}° / {s['min_temp']}°C</div>
             <span class="wim-day-flag {fcss}">{flag}</span>
         </div>""", unsafe_allow_html=True)
