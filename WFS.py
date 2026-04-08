@@ -712,8 +712,18 @@ def build_forecast(lat, lon, days=7):
             total_weight = sum(weight for _, weight in valid_vis)
             return weighted_sum / total_weight
 
+        # SPECIAL HANDLING: If IMD (local Indian Meteorological Dept) reports rain for current hour,
+        # use MAX rain value to ensure real-time rain detection isn't washed out by ensemble averaging.
+        # IMD has best local ground truth for current conditions.
         rain_vals = [d["rain"] for d in srcs.values()]
-        if len(rain_vals) >= 2:
+        is_current_hour = (hk == now_h)
+        has_imd_rain = "imd" in srcs and srcs["imd"]["rain"] > 0.1
+        
+        if is_current_hour and has_imd_rain:
+            # IMD detected rain NOW - use the maximum rain value across all sources
+            # to ensure we catch actual precipitation happening on the ground
+            rain_out = max(rain_vals)
+        elif len(rain_vals) >= 2:
             rain_out = sorted(rain_vals)[len(rain_vals)//2]
         elif len(rain_vals) == 1:
             rain_out = rain_vals[0]
