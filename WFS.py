@@ -826,7 +826,7 @@ def hour_to_slab(h, slabs):
 def build_slabs(hourly, is_today=False):
     slabs = generate_fixed_slabs()
     current_hour = now_ist().hour
-    raw = collections.defaultdict(lambda: dict(rain=0, pop=[], wind=[], vis=[], lightning=[], hum=[], count=0))
+    raw = collections.defaultdict( lambda: dict( rain=0, pop=[], temp=[], wind=[], vis=[], lightning=[], hum=[], cloud=[], count=0 ) )
     for hk, d in hourly:
         sk = hour_to_slab(hk.hour, slabs)
         if not sk:
@@ -842,10 +842,12 @@ def build_slabs(hourly, is_today=False):
         r = raw[sk]
         r["rain"] += d["rain_mm"]
         r["pop"].append(d["pop"])
+        r["temp"].append(d["temp"])
         r["wind"].append(d["wind_kmh"])
         r["vis"].append(d["vis_km"])
         r["lightning"].append(d["lightning"])
         r["hum"].append(d["humidity"])
+        r["cloud"].append(d.get("cloud", 0))
         r["count"] += 1
     slabs_out = []
     for sk, r in raw.items():
@@ -854,10 +856,18 @@ def build_slabs(hourly, is_today=False):
         avg = lambda lst: sum(lst) / len(lst) if lst else 0
         pops = r["pop"]
         pop_val = int(sorted(pops)[int(len(pops) * 0.75)] if pops else 0)
-        slabs_out.append(dict(label=sk[2], sort=sk[0], mm=round(r["rain"], 1),
-                              pop=pop_val, wind=round(avg(r["wind"]), 1),
-                              vis=round(avg(r["vis"]), 1), hum=round(avg(r["hum"]), 1),
-                              lightning=any(r["lightning"])))
+        slabsout.append(dict(
+            label=sk[2],
+            sort=sk[0],
+            mm=round(r["rain"], 1),
+            pop=popval,
+            temp=round(avg(r["temp"]), 1),
+            hum=round(avg(r["hum"]), 1),
+            cloud=round(avg(r["cloud"]), 0),
+            wind=round(avg(r["wind"]), 1),
+            vis=round(avg(r["vis"]), 1),
+            lightning=any(r["lightning"])
+            ))
     slabs_out.sort(key=lambda x: x["sort"])
     return slabs_out
 
@@ -1672,20 +1682,108 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         st.markdown('<div class="wim-section">2-Hour Precipitation Windows</div>', unsafe_allow_html=True)
         if sl:
             rows = ""
-            for s in sl:
-                mm = s["mm"]
-                rain_td = f'<td class="td-alert">{rain_badge_html(mm)}</td>' if mm >= RAIN_HEAVY else (f'<td class="td-warn">{rain_badge_html(mm)}</td>' if mm >= RAIN_MOD else f'<td>{rain_badge_html(mm)}</td>')
-                w = s["wind"]
-                wind_td = f'<td class="td-alert">{w} km/h</td>' if w >= WIND_STOP else (f'<td class="td-warn">{w} km/h</td>' if w >= WIND_CAUTION else f'<td>{w} km/h</td>')
-                v = s["vis"]
-                vis_td = f'<td class="td-alert">{v} km</td>' if v <= VIS_STOP else (f'<td class="td-warn">{v} km</td>' if v <= VIS_CAUTION else f'<td>{v} km</td>')
-                l_td = '<td class="td-alert"><span class="wim-badge b-lightning">Alert</span></td>' if s["lightning"] else '<td style="color:#94A3B8;">—</td>'
-                impact = mining_impact_html(mm, w, v, s["lightning"])
-                rows += f'<tr><td style="font-weight:600;color:#334155;">{s["label"]}</td>{rain_td}<td style="color:#64748B;">{s["pop"] if mm > 0 else 0}%</td>{wind_td}{vis_td}{l_td}<td>{impact}</td></tr>'
-            st.markdown('<div style="overflow-x:auto;"><table class="wim-table"><thead><tr><th>Time Window</th><th>Rainfall</th><th>Probability</th><th>Temp</th> <th>Humidity</th> <th>Cloud</th> <th>Wind</th> <th>Visibility</th> <th>Lightning</th> <th>Mining Impact</th></tr></thead><tbody>' + rows + '</tbody></table></div>', unsafe_allow_html=True)
-        st.markdown('<div class="wim-section">Hourly Operations Timeline</div>', unsafe_allow_html=True)
-        render_hourly_graph(dh, tday)
-        st.markdown('<hr class="wim-hr">', unsafe_allow_html=True)
+                for s in sl:
+                    mm = s["mm"]
+                    pop = s.get("pop", 0)
+                    temp = s.get("temp", 0)
+                    humidity = s.get("hum", 0)
+                    cloud = s.get("cloud", 0)
+                    wind = s.get("wind", 0)
+                    visibility = s.get("vis", 10)
+                    lightning = s.get("lightning", False)
+
+                    rain_td = (
+                        f'<td class="td-alert">{rain_badge_html(mm)}</td>'
+                        if mm >= RAIN_HEAVY
+                        else (
+                            f'<td class="td-warn">{rain_badge_html(mm)}</td>'
+                            if mm >= RAIN_MOD
+                            else f'<td>{rain_badge_html(mm)}</td>'
+                        )
+                    )
+
+                    wind_td = (
+                        f'<td class="td-alert">{wind} km/h</td>'
+                        if wind >= WIND_STOP
+                        else (
+                            f'<td class="td-warn">{wind} km/h</td>'
+                            if wind >= WIND_CAUTION
+                            else f'<td>{wind} km/h</td>'
+                        )
+                    )
+
+                    vis_td = (
+                        f'<td class="td-alert">{visibility} km</td>'
+                        if visibility <= VIS_STOP
+                        else (
+                            f'<td class="td-warn">{visibility} km</td>'
+                            if visibility <= VIS_CAUTION
+                            else f'<td>{visibility} km</td>'
+                        )
+                    )
+
+                    pop_td = (
+                        f'<td class="td-alert">{pop}%</td>'
+                        if pop >= 70
+                        else (
+                            f'<td class="td-warn">{pop}%</td>'
+                            if pop >= 40
+                            else f'<td>{pop}%</td>'
+                        )
+                    )
+
+                    lightning_td = (
+                        '<td class="td-alert">'
+                        '<span class="wim-badge b-lightning">Alert</span>'
+                        '</td>'
+                        if lightning
+                        else '<td style="color:#94A3B8;">—</td>'
+                    )
+
+                    impact = mining_impact_html(
+                        mm,
+                        wind,
+                        visibility,
+                        lightning
+                    )
+
+                    rows += (
+                        f'<tr>'
+                        f'<td style="font-weight:600;color:#334155;white-space:nowrap;">'
+                        f'{s["label"]}</td>'
+                        f'{rain_td}'
+                        f'{pop_td}'
+                        f'<td>{temp}°C</td>'
+                        f'<td>{humidity}%</td>'
+                        f'<td>{int(cloud)}%</td>'
+                        f'{wind_td}'
+                        f'{vis_td}'
+                        f'{lightning_td}'
+                        f'<td>{impact}</td>'
+                        f'</tr>'
+                    )
+
+                st.markdown(
+                    '<div style="overflow-x:auto;">'
+                    '<table class="wim-table">'
+                    '<thead><tr>'
+                    '<th>Hour</th>'
+                    '<th>Rainfall</th>'
+                    '<th>Rain Prob.</th>'
+                    '<th>Temp</th>'
+                    '<th>Humidity</th>'
+                    '<th>Cloud</th>'
+                    '<th>Wind</th>'
+                    '<th>Visibility</th>'
+                    '<th>Lightning</th>'
+                    '<th>Mining Impact</th>'
+                    '</tr></thead>'
+                    '<tbody>' + rows + '</tbody>'
+                    '</table>'
+                    '</div>',
+                    unsafe_allow_html=True
+                        render_hourly_graph(dh, tday)
+                        st.markdown('<hr class="wim-hr">', unsafe_allow_html=True)
 srcs = ["Open-Meteo (ECMWF)"]
 if ACCUWEATHER_KEY: srcs += ["AccuWeather", "MinuteCast (radar)"]
 if OPENWEATHER_KEY: srcs.append("OpenWeather 5-day / 3-hour")
