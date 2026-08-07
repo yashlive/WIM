@@ -1768,5 +1768,3 @@ st.markdown(
     f'&nbsp;&nbsp;•&nbsp;&nbsp; © Adani Natural Resources {now_ist().year}</p>', unsafe_allow_html=True)
 
 st.markdown('</div>', unsafe_allow_html=True)  # close .wim-page
-git add .
-git commit -m "describe your change"
