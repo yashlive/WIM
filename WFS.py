@@ -1,8 +1,8 @@
 """
 Adani Natural Resources — WIM (Weather Intelligence Mining)
-v3.1 — Clean version, JSON-only site management,
+v3.2 — Clean version, JSON-only site management,
         hourly precipitation for all days, mining impact column,
-        underground (incline/shaft) sites, API health check, tab-fix CSS
+        underground (incline/shaft) sites, tab-fix CSS
 """
 import os, json, requests, collections, base64, concurrent.futures
 import streamlit.components.v1 as components
@@ -275,13 +275,13 @@ DEFAULT_SITES = [
     {"id": "builtin-dhirauli",   "name": "Dhirauli",        "lat": 23.936440, "lon": 82.358836, "type": "Coal Open Cast Mine", "builtin": True},
     {"id": "builtin-parsa",      "name": "Parsa",           "lat": 22.824950, "lon": 82.804340, "type": "Coal Open Cast Mine", "builtin": True},
     {"id": "builtin-talabira",   "name": "Talabira",       "lat": 21.756317, "lon": 83.970446, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-gare-pelma", "name": "GP III",             "lat": 22.105303, "lon": 83.292822, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-gp-ii",      "name": "GP II",            "lat": 22.160838, "lon": 83.472457, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-gare-pelma", "name": "Gare Pelma III",             "lat": 22.105303, "lon": 83.292822, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-gp-ii",      "name": "Gare Pelma II",            "lat": 22.160838, "lon": 83.472457, "type": "Coal Open Cast Mine", "builtin": True},
     {"id": "builtin-pcb",        "name": "PCB",              "lat": 22.854601, "lon": 82.763414, "type": "Coal Open Cast Mine", "builtin": True},
     {"id": "builtin-pekb",       "name": "PEKB",             "lat": 22.823873, "lon": 82.805322, "type": "Coal Open Cast Mine", "builtin": True},
     {"id": "builtin-kurmitar",   "name": "Kurmitar",       "lat": 21.749766, "lon": 85.167471, "type": "Iron Ore Mine", "builtin": True},
     {"id": "builtin-taldih",     "name": "Taldih",         "lat": 21.91056, "lon": 85.18014, "type": "Iron Ore Mine", "builtin": True},
-    # ── NEW: Underground greenfield sites (Incline / Shaft development) ──
+    # ── Underground greenfield sites (Incline / Shaft development) ──
     {"id": "builtin-gondbahera-ujheni", "name": "Gondbahera Ujheni", "lat": 24.175830, "lon": 82.369544,
      "type": "Underground Mine (Incline/Shaft — Greenfield)", "builtin": True},
     {"id": "builtin-gondkhari", "name": "Gondkhari", "lat": 21.143326, "lon": 78.934850,
@@ -1597,25 +1597,6 @@ loading.caption(f"Fetching forecast for {site['name']}…")
 by_day, mc_data, src_status = build_forecast(site["lat"], site["lon"], days)
 loading.empty()
 
-# ── API Health Check (always visible — not just on total failure) ──
-with st.expander("🛰️  API Health Check", expanded=False):
-    cols = st.columns(3)
-    for i, (name, status) in enumerate(src_status.items()):
-        with cols[i % 3]:
-            if status == "ok":
-                st.markdown(f'<span class="db-badge-ok">✓ {name}</span>', unsafe_allow_html=True)
-            else:
-                s_l = str(status).lower()
-                reason = ("No API key" if "no key" in s_l else
-                          "Quota exhausted (401)" if "401" in str(status) else
-                          "Timeout" if "timeout" in s_l else
-                          "No location key" if "no location key" in s_l else
-                          str(status)[:60])
-                st.markdown(f'<span class="db-badge-local">✗ {name} — {reason}</span>', unsafe_allow_html=True)
-    if st.button("Re-check now", key="apihealth_recheck"):
-        st.cache_data.clear()
-        st.rerun()
-
 if not by_day:
     ok = [s for s, v in src_status.items() if v == "ok"]
     fail = {s: v for s, v in src_status.items() if v != "ok"}
@@ -1787,3 +1768,5 @@ st.markdown(
     f'&nbsp;&nbsp;•&nbsp;&nbsp; © Adani Natural Resources {now_ist().year}</p>', unsafe_allow_html=True)
 
 st.markdown('</div>', unsafe_allow_html=True)  # close .wim-page
+git add .
+git commit -m "describe your change"
