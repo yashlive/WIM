@@ -441,10 +441,60 @@ def condition_str(total, descs, max_pop=0):
     return "Clear"
 
 @st.cache_data(ttl=1800)
-d"""Patch WFS-2.py / WFS.py to replace OpenWeather One Call 3.0 with the free 5-day / 3-hour forecast.
+@st.cache_data(ttl=1800)
+def fetch_openweather(lat, lon):
+    if not OPENWEATHER_KEY:
+        return None, "no key"
 
-This patch is intended to be copied into the file manually or used as a reference.
-"""
+    try:
+        url = (
+            "https://api.openweathermap.org/data/2.5/forecast"
+            f"?lat={lat}&lon={lon}"
+            f"&units=metric&appid={OPENWEATHER_KEY}"
+        )
+
+        response = requests.get(url, timeout=TIMEOUT)
+        response.raise_for_status()
+        payload = response.json()
+
+        hourly = []
+
+        for item in payload.get("list", []):
+            main = item.get("main", {})
+            wind = item.get("wind", {})
+            weather = item.get("weather", [{}])[0]
+            rain = item.get("rain", {})
+
+            hourly.append({
+                "dt": item.get("dt"),
+                "temp": float(main.get("temp", 0) or 0),
+                "rain": {
+                    "1h": float(rain.get("3h", 0) or 0) / 3.0
+                },
+                "pop": float(item.get("pop", 0) or 0),
+                "wind_speed": float(wind.get("speed", 0) or 0),
+                "visibility": float(item.get("visibility", 10000) or 10000),
+                "weather": [{
+                    "id": int(weather.get("id", 0) or 0),
+                    "description": weather.get("description", "")
+                }],
+                "humidity": float(main.get("humidity", 0) or 0)
+            })
+
+        if not hourly:
+            return None, "empty forecast response"
+
+        return {"hourly": hourly}, None
+
+    except requests.HTTPError as exc:
+        status = getattr(exc.response, "status_code", "unknown")
+        return None, f"HTTP {status}: {exc}"
+
+    except requests.RequestException as exc:
+        return None, f"network error: {exc}"
+
+    except Exception as exc:
+        return None, str(exc)
 
 @st.cache_data(ttl=1800)
 def fetch_openweather(lat, lon):
