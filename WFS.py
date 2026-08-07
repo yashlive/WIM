@@ -130,25 +130,24 @@ hr.wim-hr{{border:none;border-top:1px solid #E2E8F0;margin:12px 0;}}
 [data-testid="stHorizontalBlock"]{{gap:12px !important;}}
 /* Sidebar CSS overrides removed to keep layout stable */
 .stTabs [data-baseweb="tab-list"]{{gap:0;border-bottom:2px solid #E2E8F0;background:transparent;}}
-.stTabs [data-baseweb="tab"]{{background:transparent !important;color:#64748B !important;font-size:0.82rem !important;font-weight:600 !important;padding:10px 18px !important;border:none !important;border-bottom:2px solid transparent !important;margin-bottom:-2px !important;opacity:1 !important;visibility:visible !important;}}
-.stTabs [data-baseweb="tab"]:hover{{color:#0B74B0 !important;background:#F0F7FF !important;border-radius:6px 6px 0 0;}}
-.stTabs [aria-selected="true"]{{color:#0B74B0 !important;border-bottom:2px solid #0B74B0 !important;background:transparent !important;font-weight:700 !important;}}
+.stTabs [data-baseweb="tab"],.stTabs button[data-baseweb="tab"],.stTabs [data-baseweb="tab"] p,.stTabs button[data-baseweb="tab"] p,.stTabs [data-baseweb="tab"] div,.stTabs button[data-baseweb="tab"] div{{background:transparent !important;color:#334155 !important;font-size:0.82rem !important;font-weight:600 !important;padding:10px 18px !important;border:none !important;border-bottom:2px solid transparent !important;margin-bottom:-2px !important;opacity:1 !important;visibility:visible !important;}}
+.stTabs [data-baseweb="tab"]:hover,.stTabs button[data-baseweb="tab"]:hover,.stTabs [data-baseweb="tab"]:hover p,.stTabs button[data-baseweb="tab"]:hover p{{color:#0B74B0 !important;background:#EFF6FF !important;border-radius:6px 6px 0 0;}}
+.stTabs [aria-selected="true"],.stTabs [aria-selected="true"] p,.stTabs button[aria-selected="true"],.stTabs button[aria-selected="true"] p{{color:#0B74B0 !important;border-bottom:2px solid #0B74B0 !important;background:transparent !important;font-weight:700 !important;}}
 .stTabs [data-baseweb="tab-highlight"],.stTabs [data-baseweb="tab-border"]{{display:none !important;}}
 .streamlit-expanderHeader{{font-size:0.82rem !important;font-weight:700 !important;color:#1A1A2E !important;background:#F8FAFC !important;border:1px solid #E2E8F0 !important;border-radius:8px !important;padding:10px 14px !important;}}
 .streamlit-expanderContent{{border:1px solid #E2E8F0 !important;border-top:none !important;border-radius:0 0 8px 8px !important;padding:14px !important;}}
 .hour-row-rain{{background:#EFF6FF;}}.hour-row-heavy{{background:#FFF7ED;}}.hour-row-alert{{background:#FFF1F2;}}
 .db-badge-ok{{display:inline-block;background:#D1FAE5;color:#065F46;border-radius:4px;padding:2px 8px;font-size:0.65rem;font-weight:700;}}
 .db-badge-local{{display:inline-block;background:#FEF3C7;color:#92400E;border-radius:4px;padding:2px 8px;font-size:0.65rem;font-weight:700;}}
-/* Dropdown - Clean Minimal Design - FORCE DARK TEXT */
-div[data-testid="stSelectbox"]{{margin-left:auto !important;max-width:180px !important;}}
-div[data-testid="stSelectbox"] > div > div{{background:#FFFFFF !important;border:1px solid #6B7280 !important;border-radius:6px !important;}}
-div[data-testid="stSelectbox"] > div > div:hover{{border-color:#374151 !important;}}
-div[data-testid="stSelectbox"] *{{color:#000000 !important;}}
-div[data-testid="stSelectbox"] [role="button"],div[data-testid="stSelectbox"] [role="button"] *,div[data-testid="stSelectbox"] input,div[data-testid="stSelectbox"] span{{color:#111827 !important;font-size:14px !important;font-weight:600 !important;}}
-div[data-testid="stSelectbox"] [role="listbox"]{{background:#FFFFFF !important;border:1px solid #D1D5DB !important;border-radius:6px !important;box-shadow:0 4px 6px rgba(0,0,0,0.1) !important;}}
-div[data-testid="stSelectbox"] [role="option"],div[data-testid="stSelectbox"] [role="option"] *{{color:#111827 !important;font-size:14px !important;}}
-div[data-testid="stSelectbox"] [role="option"]:hover{{background:#F3F4F6 !important;}}
-div[data-testid="stSelectbox"] [role="option"][aria-selected="true"],div[data-testid="stSelectbox"] [role="option"][aria-selected="true"] *{{background:#0B74B0 !important;color:#FFFFFF !important;font-weight:600 !important;}}
+/* Site picker — light theme, Adani blue accent */
+div[data-testid="stSelectbox"]{{margin-left:auto !important;max-width:150px !important;}}
+div[data-testid="stSelectbox"] > div > div{{background:#FFFFFF !important;border:1px solid #0B74B0 !important;border-radius:8px !important;box-shadow:none !important;}}
+div[data-testid="stSelectbox"] > div > div:hover{{border-color:#0B74B0 !important;background:#FFFFFF !important;}}
+div[data-testid="stSelectbox"] [role="button"],div[data-testid="stSelectbox"] [role="button"] span,div[data-testid="stSelectbox"] [data-baseweb="select"] span{{background:#FFFFFF !important;color:#0F172A !important;font-size:0.82rem !important;font-weight:700 !important;}}
+div[data-testid="stSelectbox"] [role="listbox"],div[data-testid="stSelectbox"] [role="menu"]{{background:#FFFFFF !important;border:1px solid #0B74B0 !important;border-radius:8px !important;box-shadow:0 4px 12px rgba(11,116,176,0.12) !important;}}
+div[data-testid="stSelectbox"] [role="option"]{{background:#FFFFFF !important;color:#334155 !important;font-size:0.82rem !important;}}
+div[data-testid="stSelectbox"] [role="option"]:hover,div[data-testid="stSelectbox"] [role="option"]:hover *{{background:#EFF6FF !important;color:#0F172A !important;}}
+div[data-testid="stSelectbox"] [role="option"][aria-selected="true"],div[data-testid="stSelectbox"] [role="option"][aria-selected="true"] *{{background:#EFF6FF !important;color:#0B74B0 !important;font-weight:700 !important;}}
 
 /* ══════════════════════════════════════════════════════════════
    RESPONSIVE STYLES - Mobile, Tablet, Desktop
@@ -176,7 +175,7 @@ div[data-testid="stSelectbox"] [role="option"][aria-selected="true"],div[data-te
     .wim-site-name{{font-size:1.25rem;}}
     .wim-site-coord{{font-size:0.7rem;}}
     
-    div[data-testid="stSelectbox"]{{max-width:160px !important;}}
+    div[data-testid="stSelectbox"]{{max-width:140px !important;}}
     
     .wim-day{{padding:10px 6px;border-radius:8px;}}
     .wim-day-label{{font-size:0.6rem;}}
@@ -302,6 +301,8 @@ DEFAULT_SITES = [
     {"id": "builtin-pekb",       "name": "PEKB",             "lat": 22.823873, "lon": 82.805322, "type": "Coal Open Cast Mine", "builtin": True},
     {"id": "builtin-kurmitar",   "name": "Kurmitar",       "lat": 21.749766, "lon": 85.167471, "type": "Iron Ore Mine", "builtin": True},
     {"id": "builtin-taldih",     "name": "Taldih",         "lat": 21.91056, "lon": 85.18014, "type": "Iron Ore Mine", "builtin": True},
+    {"id": "builtin-gondbahera", "name": "Gondbahera Ujheni", "lat": 24.175830, "lon": 82.369544, "type": "Underground Greenfield Mine", "work_type": "Incline", "builtin": True},
+    {"id": "builtin-gondkhari",  "name": "Gondkhari",      "lat": 21.143326, "lon": 78.934850, "type": "Underground Greenfield Mine", "work_type": "Shaft", "builtin": True},
 ]
 IST       = pytz.timezone('Asia/Kolkata')
 UTC       = pytz.utc
@@ -905,7 +906,10 @@ def day_summary(hourly, mine_type="Coal Open Cast Mine", target_day=None):
 # ══════════════════════════════════════════════════════════════
 # SMART RECOMMENDATION
 # ══════════════════════════════════════════════════════════════
-def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
+def _is_underground(mine_type):
+    return "Underground" in (mine_type or "")
+
+def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine", work_type=None):
     rain = ds["total_rain"]; mwind = ds.get("max_wind", ds.get("avg_wind", 0))
     mvis = ds["min_vis"]; pop = ds["max_pop"]
     has_l   = any(s["lightning"] for s in slabs)
@@ -917,14 +921,46 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
     parts  = []
 
     # Mine-specific wind thresholds
-    if "Iron Ore" in mine_type:
+    if _is_underground(mine_type):
+        WIND_CAUTION_MINE = 25
+        WIND_STOP_MINE = 28
+    elif "Iron Ore" in mine_type:
         WIND_CAUTION_MINE = 25  # Lower threshold for iron ore operations
         WIND_STOP_MINE = 28      # Lower threshold for iron ore operations
     else:
         WIND_CAUTION_MINE = WIND_CAUTION  # 30 km/h for coal
         WIND_STOP_MINE = WIND_STOP       # 32 km/h for coal
 
-    if rain == 0 and pop < 25:
+    if _is_underground(mine_type):
+        wt = work_type or "Incline"
+        if rain == 0 and pop < 25:
+            if wt == "Shaft":
+                parts.append(f"{dlabel} is forecast to be dry. Shaft shutter work, concreting, and equipping may proceed with standard manpower protection, refuge-area checks, and hoist communication verified before each descent.")
+            else:
+                parts.append(f"{dlabel} is forecast to be dry. Incline drilling, controlled blasting, and jumbo drill operations may proceed normally. Inspect berms and confirm dewatering pump readiness before shift start.")
+        elif rain == 0 and pop >= 25:
+            parts.append(f"{dlabel} is likely dry with a {pop}% chance of isolated showers. Complete precision work (blasting, concreting, shutter installation) in the morning window and keep dewatering pumps on standby.")
+        elif heavy_sl:
+            hw = heavy_sl[0]["label"]; hp = heavy_sl[0]["pop"]
+            parts.append(f"Heavy rainfall totaling {rain} mm is expected {dlabel.lower()}, peaking around {hw} ({hp}% probability).<br>")
+            if wt == "Shaft":
+                parts.append("Suspend shaft concreting and exposed shutter work. Restrict manpower to essential surface duties only. Verify shaft-bottom pump capacity and emergency refuge protocols before any descent.")
+            else:
+                parts.append("Suspend incline blasting and jumbo drill charging. Run dewatering pumps continuously, inspect berms and incline haulage paths, and defer explosive transport until 2 hours after rain stops.")
+        elif mod_sl or rain_sl:
+            first = rain_sl[0]["label"] if rain_sl else mod_sl[0]["label"]
+            last = rain_sl[-1]["label"] if rain_sl else mod_sl[-1]["label"]
+            first_start = first.split('–')[0].strip() if '–' in first else first.split('-')[0].strip()
+            last_end = last.split('–')[1].strip() if '–' in last else last.split('-')[1].strip()
+            time_range = f"{first_start} – {last_end}"
+            parts.append(f"Rainfall of {rain} mm is forecast {time_range} ({pop}% probability).<br>")
+            if wt == "Shaft":
+                parts.append("Plan concreting and shutter activities in pre-rain dry windows. During rain, protect open shaft collars, restrict non-essential shaft entry, and ensure manpower have covered access routes.")
+            else:
+                parts.append("Schedule incline blasting and jumbo drill work before the wet window. Activate dewatering pumps, monitor berm stability, and allow 1–2 hours post-rain for incline drainage before resuming explosives handling.")
+        elif pop >= 15:
+            parts.append(f"{dlabel} may see brief showers ({pop}% probability). Minimal underground impact expected — keep dewatering pumps tested and berms clear.")
+    elif rain == 0 and pop < 25:
         if "Coal" in mine_type:
             parts.append(f"{dlabel} is forecast to be completely dry. All open-cast operations including OB removal, drilling, blasting, and coal dispatch can proceed normally.")
         else:
@@ -995,10 +1031,15 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
 
     if has_l:
         lt = [s["label"] for s in slabs if s["lightning"]]
-        parts.append(f"Lightning forecast around {lt[0]}. All blasting, drilling, and work near tall equipment (excavators, conveyors) must halt 30 minutes before the storm and resume only after 30 clear minutes.")
+        if _is_underground(mine_type):
+            parts.append(f"Lightning forecast around {lt[0]}. Halt incline jumbo drills, surface-connected electrical plant, and review shaft hoist operations. No blasting within 30 minutes of lightning — resume only after 30 clear minutes.")
+        else:
+            parts.append(f"Lightning forecast around {lt[0]}. All blasting, drilling, and work near tall equipment (excavators, conveyors) must halt 30 minutes before the storm and resume only after 30 clear minutes.")
 
     if mwind >= WIND_STOP_MINE:
-        if "Coal" in mine_type:
+        if _is_underground(mine_type):
+            parts.append(f"Wind gusts of {mwind} km/h exceed safe limits for underground surface plant. Defer incline blasting and suspend crane/shutter lifting at shaft collar until wind subsides.")
+        elif "Coal" in mine_type:
             parts.append(f"Wind gusts of {mwind} km/h exceed the DGMS blasting limit ({WIND_STOP} km/h). Defer all blasting. Extend flyrock exclusion zones and confirm with safety officer before resuming.")
         else:
             parts.append(f"Wind gusts of {mwind} km/h exceed safe blasting limits for iron ore operations ({WIND_STOP_MINE} km/h). Defer all blasting. Extend flyrock exclusion zones and confirm with safety officer before resuming.")
@@ -1009,9 +1050,15 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
             parts.append(f"Wind speeds up to {mwind} km/h will increase ore dust dispersal. Activate dust suppression and verify flyrock zones before each blast.")
 
     if mvis <= VIS_STOP and mvis > 0:
-        parts.append(f"Visibility forecast to drop to {mvis} km. Restrict all haul truck and heavy equipment movement. Deploy flagmen at road intersections.")
+        if _is_underground(mine_type):
+            parts.append(f"Visibility forecast to drop to {mvis} km. Restrict surface haulage to incline/shaft areas. Deploy flagmen at incline mouth and shaft collar access points.")
+        else:
+            parts.append(f"Visibility forecast to drop to {mvis} km. Restrict all haul truck and heavy equipment movement. Deploy flagmen at road intersections.")
     elif mvis <= VIS_CAUTION and mvis > 0:
-        parts.append(f"Reduced visibility of {mvis} km expected. Enforce lower truck speeds on haul roads and deploy additional spotters on active benches.")
+        if _is_underground(mine_type):
+            parts.append(f"Reduced visibility of {mvis} km expected. Enforce lower speeds on surface access roads to incline and shaft. Increase spotter presence at berm edges.")
+        else:
+            parts.append(f"Reduced visibility of {mvis} km expected. Enforce lower truck speeds on haul roads and deploy additional spotters on active benches.")
 
     return " ".join(parts) if parts else f"{dlabel} presents no significant weather concerns. All planned operations may proceed as scheduled."
 
@@ -1099,19 +1146,44 @@ def operational_window_optimizer(slabs, min_vis=5.0, max_wind=30, max_rain=1.0):
     best = safe_windows[0]
     return f"Optimal operational window: {best[0]} ({best[1]} hours continuous). Schedule precision activities (blasting, heavy lifts) during this period."
 
-def equipment_specific_advisories(slabs, hourly=None, mine_type="Coal Open Cast Mine"):
+def equipment_specific_advisories(slabs, hourly=None, mine_type="Coal Open Cast Mine", work_type=None):
     """Generate equipment-specific operational guidance"""
     advisories = []
     
-    # Note: Heat warnings are handled by worker_safety_index, not here
-    # Heat affects workers, not specific equipment
-    
-    # Find max values across all slabs
     max_wind = max((s["wind"] for s in slabs), default=0)
     max_rain = max((s["mm"] for s in slabs), default=0)
     min_vis = min((s["vis"] for s in slabs), default=10)
     has_lightning = any(s["lightning"] for s in slabs)
+
+    if _is_underground(mine_type):
+        wt = work_type or "Incline"
+        if wt == "Shaft":
+            if has_lightning:
+                advisories.append("SHAFT HOIST: Lightning protocol — suspend personnel hoisting. Verify refuge chambers and communication before resuming.")
+            if max_rain >= 10:
+                advisories.append("SHUTTER & CONCRETE: Heavy rain — defer concreting and exposed shutter installation. Protect shaft collar from water ingress.")
+            elif max_rain >= 3:
+                advisories.append("SHUTTER & CONCRETE: Moderate rain — cover fresh concrete, delay shutter lifts until surface dry.")
+            if max_rain >= 5:
+                advisories.append("DEWATERING: Activate shaft-bottom and sump pumps. Confirm pump redundancy before shift descent.")
+            if has_lightning or max_rain >= 5:
+                advisories.append("MANPOWER: Ensure PPE compliance, refuge-area readiness, and two-way communication on every shaft descent.")
+        else:
+            if has_lightning:
+                advisories.append("JUMBO DRILL: Lightning within range — suspend incline drilling and explosive charging immediately.")
+            if max_rain >= 10:
+                advisories.append("INCLINE BLASTING: Heavy rain — suspend blasting. Inspect charged holes and berm stability before resuming.")
+            elif max_rain >= 3:
+                advisories.append("INCLINE BLASTING: Moderate rain — defer charging holes. Check incline drainage before explosive transport.")
+            if max_rain >= 2:
+                advisories.append("DEWATERING PUMPS: Run incline sump and berm pumps. Monitor water levels at every 2-hour interval.")
+            if max_wind >= 25:
+                advisories.append("JUMBO DRILL: High wind at incline mouth — secure drill masts and suspend tramming until conditions improve.")
+            if max_rain >= 1:
+                advisories.append("BERMS: Inspect incline berms and haulage paths after rainfall before equipment movement.")
+        return advisories if advisories else ["All underground operations can proceed under standard protocols."]
     
+    # Note: Heat warnings are handled by worker_safety_index, not here
     # Haul Trucks - only severe conditions
     if max_wind >= 25:
         advisories.append("HAUL TRUCKS: Crosswind alert at 25+ km/h. Reduce speed to 20 km/h on exposed haul roads. Increase following distance to 100m.")
@@ -1680,9 +1752,12 @@ if not site:
     st.stop()
 
 with _col_left:
+    _type_lbl = site.get("type", "")
+    _wt = site.get("work_type", "")
+    _sub = f' · {_wt}' if _wt else ""
     st.markdown(f"""<div class="wim-site-row">
         <div class="wim-site-name">{site['name']}</div>
-        <div class="wim-site-coord">{site['lat']}° N, {site['lon']}° E</div>
+        <div class="wim-site-coord">{site['lat']}° N, {site['lon']}° E{_sub}</div>
     </div>""", unsafe_allow_html=True)
 
 _loading = st.empty()
@@ -1707,6 +1782,15 @@ if not by_day:
 
 today   = now_ist().date()
 today_h = by_day.get(today, [])
+
+# ── API source status (compact) ──
+_api_dots = ""
+for _src, _st in src_status.items():
+    _ok = _st == "ok"
+    _tip = "Online" if _ok else _st[:40]
+    _color = "#16A34A" if _ok else "#DC2626"
+    _api_dots += f'<span style="display:inline-flex;align-items:center;gap:4px;margin:0 8px;"><span style="width:7px;height:7px;border-radius:50%;background:{_color};display:inline-block;"></span><span style="color:#64748B;">{_src}</span></span>'
+st.markdown(f'<div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;font-size:0.68rem;margin:4px 0 8px;">{_api_dots}</div>', unsafe_allow_html=True)
 
 # ── 7-Day Outlook ──
 st.markdown('<div class="wim-section">7-Day Outlook</div>', unsafe_allow_html=True)
@@ -1760,7 +1844,8 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
 
         # Forecast Advisory
         mine_type = site.get("type", "Coal Open Cast Mine")
-        rec = smart_rec(ds, sl, tday, mine_type)
+        work_type = site.get("work_type")
+        rec = smart_rec(ds, sl, tday, mine_type, work_type)
         acss = ("wim-alert-high" if rain_t >= 15 or has_l else
                 "wim-alert-moderate" if rain_t >= 5 or hi_w else
                 "wim-alert-low")  # All safe conditions (dry or light rain) use green
@@ -1793,8 +1878,8 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
                 insights_html += f'<div style="background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:0.85rem;color:#92400E;">{window}</div>'
         
         # Equipment Advisories - only actual warnings (not "all clear")
-        equip_advisories = equipment_specific_advisories(sl, dh, mine_type)
-        real_advisories = [adv for adv in equip_advisories if "All equipment can operate" not in adv]
+        equip_advisories = equipment_specific_advisories(sl, dh, mine_type, work_type)
+        real_advisories = [adv for adv in equip_advisories if "All equipment can operate" not in adv and "All underground operations can proceed" not in adv]
         if real_advisories:
             insights_html += '<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:12px 16px;font-size:0.82rem;color:#92400E;margin-bottom:12px;">'
             insights_html += '<div style="font-weight:700;margin-bottom:8px;color:#B45309;">Equipment Advisories</div>'
