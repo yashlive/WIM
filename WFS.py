@@ -1,8 +1,8 @@
 """
 Adani Natural Resources — WIM (Weather Intelligence Mining)
-v3.2 — Clean version, JSON-only site management,
+v3.3 — Clean version, JSON-only site management,
         hourly precipitation for all days, mining impact column,
-        underground (incline/shaft) sites, tab-fix CSS
+        underground (incline/shaft) sites, tab-fix CSS, expander-arrow-overlap fix
 """
 import os, json, requests, collections, base64, concurrent.futures
 import streamlit.components.v1 as components
@@ -56,6 +56,17 @@ _CSS = f"""<style>
 {FONT_FACE}
 *,*::before,*::after{{box-sizing:border-box;}}
 html,body,[class*="css"],.stApp,.stApp *,[data-testid="stAppViewContainer"],[data-testid="stAppViewContainer"] *,.block-container,.block-container *{{font-family:{_FONT_STACK} !important;}}
+/* ══════════ ICON FONT FIX — stop expander arrow / material icons from rendering as literal overlapping text ══════════ */
+[data-testid="stIconMaterial"],
+[data-testid="stIconMaterial"] *,
+span[data-testid="stIconMaterial"],
+.material-icons,
+[class*="MaterialIcon"],
+i.material-icons{{
+    font-family:"Material Symbols Rounded","Material Icons" !important;
+    -webkit-text-fill-color:initial !important;
+}}
+/* ══════════ END ICON FONT FIX ══════════ */
 .stApp{{background:#F8F9FA !important;color:#1A1A2E !important;}}
 #MainMenu,footer{{visibility:hidden;}}
 header[data-testid="stHeader"]{{background:transparent !important;z-index:999999 !important;}}
@@ -157,8 +168,16 @@ hr.wim-hr{{border:none;border-top:1px solid #E2E8F0;margin:12px 0;}}
 .stTabs [data-baseweb="tab-border"]{{display:none !important;}}
 /* ══════════ END TAB FIX ══════════ */
 
+/* ══════════ EXPANDER HEADER FIX — arrow icon must not overlap label text ══════════ */
 .streamlit-expanderHeader{{font-size:0.82rem !important;font-weight:700 !important;color:#1A1A2E !important;background:#F8FAFC !important;border:1px solid #E2E8F0 !important;border-radius:8px !important;padding:10px 14px !important;}}
 .streamlit-expanderContent{{border:1px solid #E2E8F0 !important;border-top:none !important;border-radius:0 0 8px 8px !important;padding:14px !important;}}
+div[data-testid="stExpander"] summary{{display:flex !important;align-items:center !important;gap:8px !important;padding:10px 14px !important;}}
+div[data-testid="stExpander"] summary p{{margin:0 !important;flex:1 1 auto !important;order:1 !important;}}
+div[data-testid="stExpander"] summary [data-testid="stIconMaterial"]{{order:2 !important;flex:0 0 auto !important;position:static !important;margin-left:auto !important;}}
+div[data-testid="stExpander"] details summary{{list-style:none !important;}}
+div[data-testid="stExpander"] details summary::-webkit-details-marker{{display:none !important;}}
+/* ══════════ END EXPANDER HEADER FIX ══════════ */
+
 .hour-row-rain{{background:#EFF6FF;}}.hour-row-heavy{{background:#FFF7ED;}}.hour-row-alert{{background:#FFF1F2;}}
 .db-badge-ok{{display:inline-block;background:#D1FAE5;color:#065F46;border-radius:4px;padding:2px 8px;font-size:0.65rem;font-weight:700;}}
 .db-badge-local{{display:inline-block;background:#FEF3C7;color:#92400E;border-radius:4px;padding:2px 8px;font-size:0.65rem;font-weight:700;}}
