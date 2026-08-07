@@ -1209,6 +1209,51 @@ def render_hourly_table(hourly, target_day):
     ist_now_h = now_ist().replace(minute=0, second=0, microsecond=0)
     rows = ""
     seen_hours = set()
+        # Combine hourly records into 2-hour blocks
+    grouped = collections.defaultdict(list)
+
+    for hk, d in hourly:
+        block_hour = (hk.hour // 2) * 2
+        block_time = hk.replace(
+            hour=block_hour,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+        grouped[block_time].append(d)
+
+    two_hourly = []
+
+    for block_time, records in sorted(grouped.items()):
+        two_hourly.append((
+            block_time,
+            {
+                "rain_mm": round(
+                    sum(x.get("rain_mm", 0) for x in records), 2
+                ),
+                "pop": round(
+                    max(x.get("pop", 0) for x in records), 1
+                ),
+                "temp": round(
+                    sum(x.get("temp", 0) for x in records) / len(records), 1
+                ),
+                "humidity": round(
+                    sum(x.get("humidity", 0) for x in records) / len(records), 1
+                ),
+                "cloud": round(
+                    sum(x.get("cloud", 0) for x in records) / len(records), 0
+                ),
+                "wind_kmh": round(
+                    max(x.get("wind_kmh", 0) for x in records), 1
+                ),
+                "vis_km": round(
+                    min(x.get("vis_km", 10) for x in records), 1
+                ),
+                "lightning": any(
+                    x.get("lightning", False) for x in records
+                )
+            }
+        ))
     for hk, d in sorted(hourly, key=lambda x: x[0]):
         h_key = hk.strftime("%Y-%m-%d %H:00")
         if h_key in seen_hours:
@@ -1260,12 +1305,8 @@ def render_hourly_graph(hourly, target_day):
     ist_now_h = now_ist().replace(minute=0, second=0, microsecond=0)
     data = []
     seen_hours = set()
-    for hk, d in sorted(hourly, key=lambda x: x[0]):
-        h_key = hk.strftime("%Y-%m-%d %H:00")
-        if h_key in seen_hours:
-            continue
-        seen_hours.add(h_key)
-        if target_day == today and hk < ist_now_h:
+    for hk, d in two_hourly:
+        if target_day == today and hk + timedelta(hours=2) <= ist_now_h:
             continue
         mm = d["rain_mm"]
         wind = d["wind_kmh"]
@@ -1645,7 +1686,7 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         st.markdown('<div class="wim-section">Hourly Operations Timeline</div>', unsafe_allow_html=True)
         render_hourly_graph(dh, tday)
         st.markdown('<hr class="wim-hr">', unsafe_allow_html=True)
-        st.markdown('<div class="wim-section">Full Hourly Precipitation Table</div>', unsafe_allow_html=True)
+        st.markdown('<div class="wim-section">Hourly Precipitation Table</div>', unsafe_allow_html=True)
         render_hourly_table(dh, tday)
 srcs = ["Open-Meteo (ECMWF)"]
 if ACCUWEATHER_KEY: srcs += ["AccuWeather", "MinuteCast (radar)"]
