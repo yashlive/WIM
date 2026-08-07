@@ -1305,7 +1305,7 @@ def render_hourly_graph(hourly, target_day):
     ist_now_h = now_ist().replace(minute=0, second=0, microsecond=0)
     data = []
     seen_hours = set()
-    for hk, d in two_hourly:
+    for hk, d in sorted(hourly, key=lambda x: x[0]):
         if target_day == today and hk + timedelta(hours=2) <= ist_now_h:
             continue
         mm = d["rain_mm"]
