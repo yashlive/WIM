@@ -1682,7 +1682,7 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
                 l_td = '<td class="td-alert"><span class="wim-badge b-lightning">Alert</span></td>' if s["lightning"] else '<td style="color:#94A3B8;">—</td>'
                 impact = mining_impact_html(mm, w, v, s["lightning"])
                 rows += f'<tr><td style="font-weight:600;color:#334155;">{s["label"]}</td>{rain_td}<td style="color:#64748B;">{s["pop"] if mm > 0 else 0}%</td>{wind_td}{vis_td}{l_td}<td>{impact}</td></tr>'
-            st.markdown('<div style="overflow-x:auto;"><table class="wim-table"><thead><tr><th>Time Window</th><th>Rainfall</th><th>Probability</th><th>Wind Speed</th><th>Visibility</th><th>Lightning</th><th>Mining Impact</th></tr></thead><tbody>' + rows + '</tbody></table></div>', unsafe_allow_html=True)
+            st.markdown('<div style="overflow-x:auto;"><table class="wim-table"><thead><tr><th>Time Window</th><th>Rainfall</th><th>Probability</th><th>Temp</th> <th>Humidity</th> <th>Cloud</th> <th>Wind</th> <th>Visibility</th> <th>Lightning</th> <th>Mining Impact</th></tr></thead><tbody>' + rows + '</tbody></table></div>', unsafe_allow_html=True)
         st.markdown('<div class="wim-section">Hourly Operations Timeline</div>', unsafe_allow_html=True)
         render_hourly_graph(dh, tday)
         st.markdown('<hr class="wim-hr">', unsafe_allow_html=True)
