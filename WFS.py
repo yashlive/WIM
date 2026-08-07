@@ -446,13 +446,10 @@ d"""Patch WFS-2.py / WFS.py to replace OpenWeather One Call 3.0 with the free 5-
 This patch is intended to be copied into the file manually or used as a reference.
 """
 
-OPENWEATHER_FUNCTION = '''@st.cache_data(ttl=1800)
+@st.cache_data(ttl=1800)
 def fetch_openweather(lat, lon):
-    """Fetch OpenWeather's standard 5-day / 3-hour forecast.
+    """Fetch OpenWeather's free 5-day / 3-hour forecast."""
 
-    The response is normalized to the hourly-like structure already consumed
-    by build_forecast(). This avoids the subscription-only One Call 3.0 API.
-    """
     if not OPENWEATHER_KEY:
         return None, "no key"
 
@@ -476,22 +473,26 @@ def fetch_openweather(lat, lon):
             wind = item.get("wind", {})
             weather = item.get("weather", [{}])[0]
             rain = item.get("rain", {})
+
             rain_3h = float(rain.get("3h", 0) or 0)
             weather_id = int(weather.get("id", 0) or 0)
 
             hourly.append({
                 "dt": item.get("dt"),
                 "temp": float(main.get("temp", 0) or 0),
-                "rain": {"1h": rain_3h / 3.0},
+                "rain": {
+                    "1h": rain_3h / 3.0
+                },
                 "pop": float(item.get("pop", 0) or 0),
                 "wind_speed": float(wind.get("speed", 0) or 0),
-                "visibility": float(item.get("visibility", 10000) or 10000),
+                "visibility": float(
+                    item.get("visibility", 10000) or 10000
+                ),
                 "weather": [{
                     "id": weather_id,
                     "description": weather.get("description", "")
                 }],
-                "humidity": float(main.get("humidity", 0) or 0),
-                "clouds": item.get("clouds", {})
+                "humidity": float(main.get("humidity", 0) or 0)
             })
 
         if not hourly:
@@ -505,22 +506,13 @@ def fetch_openweather(lat, lon):
     except requests.HTTPError as exc:
         status = getattr(exc.response, "status_code", "unknown")
         return None, f"HTTP {status}: {exc}"
+
     except requests.RequestException as exc:
         return None, f"network error: {exc}"
+
     except Exception as exc:
         return None, str(exc)
-'''
-
-PATCH_STEPS = '''
-1) Replace the existing OpenWeather function with OPENWEATHER_FUNCTION above.
-2) In the footer/source list, replace:
-       srcs.append("OpenWeather")
-   with:
-       srcs.append("OpenWeather 5-day / 3-hour")
-3) Leave Open-Meteo, Tomorrow.io, AccuWeather, MinuteCast, and IMD logic unchanged.
-4) Keep the rest of the WFS file exactly as it is.
-'''
-
+    
 @st.cache_data(ttl=1800)
 def fetch_open_meteo(lat, lon, days=7):
     url = (
