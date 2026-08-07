@@ -1686,8 +1686,6 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         st.markdown('<div class="wim-section">Hourly Operations Timeline</div>', unsafe_allow_html=True)
         render_hourly_graph(dh, tday)
         st.markdown('<hr class="wim-hr">', unsafe_allow_html=True)
-        st.markdown('<div class="wim-section">Hourly Precipitation Table</div>', unsafe_allow_html=True)
-        render_hourly_table(dh, tday)
 srcs = ["Open-Meteo (ECMWF)"]
 if ACCUWEATHER_KEY: srcs += ["AccuWeather", "MinuteCast (radar)"]
 if OPENWEATHER_KEY: srcs.append("OpenWeather 5-day / 3-hour")
