@@ -441,16 +441,85 @@ def condition_str(total, descs, max_pop=0):
     return "Clear"
 
 @st.cache_data(ttl=1800)
+d"""Patch WFS-2.py / WFS.py to replace OpenWeather One Call 3.0 with the free 5-day / 3-hour forecast.
+
+This patch is intended to be copied into the file manually or used as a reference.
+"""
+
+OPENWEATHER_FUNCTION = '''@st.cache_data(ttl=1800)
 def fetch_openweather(lat, lon):
-    if not OPENWEATHER_KEY: return None, "no key"
+    """Fetch OpenWeather's standard 5-day / 3-hour forecast.
+
+    The response is normalized to the hourly-like structure already consumed
+    by build_forecast(). This avoids the subscription-only One Call 3.0 API.
+    """
+    if not OPENWEATHER_KEY:
+        return None, "no key"
+
     try:
-        r = requests.get(
-            f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}"
-            f"&units=metric&exclude=minutely,daily,alerts&appid={OPENWEATHER_KEY}", timeout=TIMEOUT)
-        r.raise_for_status(); data = r.json()
-        return data, None
-    except Exception as e:
-        return None, str(e)
+        url = (
+            "https://api.openweathermap.org/data/2.5/forecast"
+            f"?lat={lat}"
+            f"&lon={lon}"
+            f"&units=metric"
+            f"&appid={OPENWEATHER_KEY}"
+        )
+
+        response = requests.get(url, timeout=TIMEOUT)
+        response.raise_for_status()
+        payload = response.json()
+
+        hourly = []
+
+        for item in payload.get("list", []):
+            main = item.get("main", {})
+            wind = item.get("wind", {})
+            weather = item.get("weather", [{}])[0]
+            rain = item.get("rain", {})
+            rain_3h = float(rain.get("3h", 0) or 0)
+            weather_id = int(weather.get("id", 0) or 0)
+
+            hourly.append({
+                "dt": item.get("dt"),
+                "temp": float(main.get("temp", 0) or 0),
+                "rain": {"1h": rain_3h / 3.0},
+                "pop": float(item.get("pop", 0) or 0),
+                "wind_speed": float(wind.get("speed", 0) or 0),
+                "visibility": float(item.get("visibility", 10000) or 10000),
+                "weather": [{
+                    "id": weather_id,
+                    "description": weather.get("description", "")
+                }],
+                "humidity": float(main.get("humidity", 0) or 0),
+                "clouds": item.get("clouds", {})
+            })
+
+        if not hourly:
+            return None, "empty forecast response"
+
+        return {
+            "hourly": hourly,
+            "source": "OpenWeather 5-day / 3-hour forecast"
+        }, None
+
+    except requests.HTTPError as exc:
+        status = getattr(exc.response, "status_code", "unknown")
+        return None, f"HTTP {status}: {exc}"
+    except requests.RequestException as exc:
+        return None, f"network error: {exc}"
+    except Exception as exc:
+        return None, str(exc)
+'''
+
+PATCH_STEPS = '''
+1) Replace the existing OpenWeather function with OPENWEATHER_FUNCTION above.
+2) In the footer/source list, replace:
+       srcs.append("OpenWeather")
+   with:
+       srcs.append("OpenWeather 5-day / 3-hour")
+3) Leave Open-Meteo, Tomorrow.io, AccuWeather, MinuteCast, and IMD logic unchanged.
+4) Keep the rest of the WFS file exactly as it is.
+'''
 
 @st.cache_data(ttl=1800)
 def fetch_open_meteo(lat, lon, days=7):
@@ -1538,7 +1607,7 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         render_hourly_table(dh, tday)
 srcs = ["Open-Meteo (ECMWF)"]
 if ACCUWEATHER_KEY: srcs += ["AccuWeather", "MinuteCast (radar)"]
-if OPENWEATHER_KEY: srcs.append("OpenWeather")
+if OPENWEATHER_KEY: srcs.append("OpenWeather 5-day / 3-hour")
 if TOMORROWIO_KEY: srcs.append("Tomorrow.io")
 st.markdown(f'<p style="font-size:0.68rem;color:#94A3B8;text-align:center;padding:0.5rem 0 2rem;">Sources: {" · ".join(srcs)} • Rain confirmed across 2+ sources • © Adani Natural Resources {now_ist().year}</p>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
