@@ -783,6 +783,28 @@ def _decode_background_forecast(payload, days=7):
     )
 
 
+def _imd_today_warning(row):
+    """Extract today's IMD warning from a stored advisory payload.
+
+    The background worker stores the raw IMD advisory in Supabase; the dashboard
+    only needs this small parser and must not call IMD directly.
+    """
+    if not isinstance(row, dict):
+        return "", ""
+    warning = str(
+        row.get("day1_warning")
+        or row.get("Day_1_Warning")
+        or row.get("Day_1")
+        or ""
+    ).strip()
+    color = str(
+        row.get("day1_color")
+        or row.get("Day1_Color")
+        or ""
+    ).strip()
+    return warning, color
+
+
 def load_background_forecast(site_id, days=7):
     """Read the latest precomputed mine forecast. No weather API is called here."""
     if not _supabase_enabled():
