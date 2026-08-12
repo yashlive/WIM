@@ -129,12 +129,8 @@ def set_default_site(name):
     with open(_f, "w") as f:
         json.dump({"name": name}, f)
 
+# Headless backend: site selection belongs to the Streamlit dashboard, not here.
 ALL_SITES = load_sites()
-_names = [s["name"] for s in ALL_SITES]
-
-if "active_site" not in st.session_state:
-    _def = get_default_site()
-    st.session_state.active_site = _def if (_def and _def in _names) else (_names[0] if _names else None)
 
 def now_ist():
     return datetime.now(IST)
