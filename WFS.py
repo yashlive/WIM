@@ -1,10 +1,10 @@
 """
 Adani Natural Resources — WIM (Weather Intelligence Mining)
-v3.4 — Clean version, JSON-only site management,
-mining impact column,
-underground (incline/shaft) sites, tab-fix CSS, expander-arrow-overlap fix
+v5.0 — Operations forecast, persistent Supabase cache,
+quota-safe 6-hour MinuteCast cadence, horizon-aware source fusion,
+lightning propagation, provider backoff, mining impact guidance
 """
-import os, json, requests, collections, base64, concurrent.futures
+import os, json, requests, collections, base64, concurrent.futures, hashlib
 import streamlit.components.v1 as components
 from datetime import datetime, timedelta
 import pytz
@@ -297,9 +297,14 @@ SITES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mine_site
 # Persistent API-cache policy. Values are intentionally conservative so a
 # Streamlit restart/redeploy does not immediately burn vendor quotas again.
 ACCUWEATHER_LOCATION_TTL_MIN = 7 * 24 * 60
-ACCUWEATHER_HOURLY_TTL_MIN = 60
-MINUTECAST_TTL_MIN = 30
-MINUTECAST_SOFT_LIMIT_24H = 45
+ACCUWEATHER_HOURLY_TTL_MIN = 90
+# MinuteCast free trial is only 50 requests / rolling 24h. With 12 mine
+# sites, a six-hour refresh cadence is at most 48 successful attempts/day.
+# IMPORTANT: MinuteCast itself only predicts the next ~120 minutes, so cached
+# data is never shifted forward or reused outside its original forecast horizon.
+MINUTECAST_TTL_MIN = 6 * 60
+MINUTECAST_SOFT_LIMIT_24H = 48
+PROVIDER_BACKOFF_TTL_MIN = 6 * 60
 WEATHERSTACK_TTL_MIN = 60
 
 DEFAULT_SITES = [
@@ -327,15 +332,6 @@ VIS_CAUTION = 5.0
 VIS_STOP = 2.0
 RAIN_MOD = 1.5
 RAIN_HEAVY = 5.0
-
-API_WEIGHTS = {
-    "accuweather": 0.35,
-    "tomorrow_io": 0.25,
-    "open_meteo": 0.20,
-    "weatherstack": 0.10,
-    "openweather": 0.10,
-    "minutecast": 0.00,
-}
 
 def load_sites():
     custom = _load_sites_json()
@@ -487,6 +483,23 @@ def _supabase_headers(extra=None):
     return headers
 
 
+@st.cache_data(ttl=300)
+def db_health_check():
+    if not _supabase_enabled():
+        return False, "not configured"
+    try:
+        r = requests.get(
+            f"{SUPABASE_URL}/rest/v1/weather_api_cache",
+            headers=_supabase_headers(),
+            params={"select": "source", "limit": "1"},
+            timeout=8,
+        )
+        r.raise_for_status()
+        return True, None
+    except Exception as e:
+        return False, _safe_error(e) if "_safe_error" in globals() else str(e)
+
+
 def db_cache_get(source, cache_key):
     """Return unexpired JSON payload from Supabase, or None when unavailable."""
     if not _supabase_enabled():
@@ -519,6 +532,37 @@ def db_cache_get(source, cache_key):
         return None
 
 
+def db_cache_get_record(source, cache_key):
+    """Return cache payload plus timestamps. Used when forecast age matters."""
+    if not _supabase_enabled():
+        return None
+    try:
+        r = requests.get(
+            f"{SUPABASE_URL}/rest/v1/weather_api_cache",
+            headers=_supabase_headers(),
+            params={
+                "select": "payload,fetched_at,expires_at",
+                "source": f"eq.{source}",
+                "cache_key": f"eq.{cache_key}",
+                "order": "fetched_at.desc",
+                "limit": "1",
+            },
+            timeout=8,
+        )
+        r.raise_for_status()
+        rows = r.json()
+        if not rows:
+            return None
+        expires = rows[0].get("expires_at")
+        if expires:
+            exp_dt = datetime.fromisoformat(str(expires).replace("Z", "+00:00"))
+            if exp_dt <= datetime.now(UTC):
+                return None
+        return rows[0]
+    except Exception:
+        return None
+
+
 def db_cache_set(source, cache_key, payload, ttl_minutes):
     if not _supabase_enabled() or payload is None:
         return False
@@ -542,6 +586,85 @@ def db_cache_set(source, cache_key, payload, ttl_minutes):
         return True
     except Exception:
         return False
+
+
+def _provider_backoff_key(provider):
+    # Key-specific backoff: replacing a bad API key immediately gets a fresh
+    # attempt instead of inheriting the previous key's six-hour lockout.
+    secret = {
+        "accuweather_core": ACCUWEATHER_KEY,
+        "accuweather_minutecast": ACCUWEATHER_KEY,
+        "tomorrow_io": TOMORROWIO_KEY,
+        "weatherstack": WEATHERSTACK_KEY,
+    }.get(provider, "")
+    fingerprint = hashlib.sha256(str(secret).encode("utf-8")).hexdigest()[:10] if secret else "nokey"
+    return f"{provider}|{fingerprint}"
+
+
+def provider_backoff_get(provider):
+    payload = db_cache_get("provider_backoff", _provider_backoff_key(provider))
+    if isinstance(payload, dict):
+        return payload.get("message")
+    return None
+
+
+def provider_backoff_set(provider, message, ttl_minutes=PROVIDER_BACKOFF_TTL_MIN):
+    # Prevent every Streamlit rerun / every mine from hammering a provider that
+    # has already told us the key is invalid, the plan is blocked, or quota is hit.
+    db_cache_set("provider_backoff", _provider_backoff_key(provider), {"message": str(message)}, ttl_minutes)
+
+
+def _iso_dt(value):
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = UTC.localize(dt)
+        return dt.astimezone(UTC)
+    except Exception:
+        return None
+
+
+def _active_minutecast_intervals(mc_payload):
+    """Return only MinuteCast points whose original forecast time is still relevant."""
+    if not mc_payload:
+        return []
+    if isinstance(mc_payload, list):
+        # Legacy cache format cannot safely be time-anchored; don't shift stale
+        # minute offsets forward. Force it to age out rather than fabricate nowcast.
+        return []
+    intervals = mc_payload.get("intervals", []) if isinstance(mc_payload, dict) else []
+    fetched_at = _iso_dt(mc_payload.get("fetched_at")) if isinstance(mc_payload, dict) else None
+    if not fetched_at:
+        return []
+    now_utc = datetime.now(UTC)
+    active = []
+    for m in intervals:
+        minute = int(m.get("minute", 0) or 0)
+        event_utc = fetched_at + timedelta(minutes=minute)
+        # Keep a tiny past tolerance so the current hour aggregates correctly.
+        if event_utc < now_utc - timedelta(minutes=5) or event_utc > fetched_at + timedelta(minutes=125):
+            continue
+        item = dict(m)
+        item["forecast_time"] = event_utc.astimezone(IST).isoformat()
+        active.append(item)
+    return active
+
+
+def _minutecast_status(mc_payload, mc_err):
+    if not mc_payload:
+        return str(mc_err)
+    if isinstance(mc_payload, dict):
+        fetched = _iso_dt(mc_payload.get("fetched_at"))
+        if fetched:
+            age_min = max(0, (datetime.now(UTC) - fetched).total_seconds() / 60)
+            active = _active_minutecast_intervals(mc_payload)
+            if active:
+                return f"ok — {int(age_min)} min old; next API refresh at 6h"
+            remaining = max(0, MINUTECAST_TTL_MIN - age_min)
+            return f"standby — 2h nowcast horizon ended; next API refresh in ~{int(remaining)} min"
+    return "cached"
 
 
 def db_usage_count_24h(source):
@@ -641,9 +764,10 @@ def fetch_open_meteo(lat, lon, days=7):
 def fetch_tomorrow_io(lat, lon):
     if not TOMORROWIO_KEY:
         return None, "no key"
+    blocked = provider_backoff_get("tomorrow_io")
+    if blocked:
+        return None, f"backoff — {blocked}"
     try:
-        # Tomorrow.io supports either ?apikey= or an apikey request header.
-        # Header auth avoids leaking the key into exception URLs/logs.
         r = requests.get(
             "https://api.tomorrow.io/v4/weather/forecast",
             headers={"apikey": TOMORROWIO_KEY, "Accept": "application/json"},
@@ -656,7 +780,12 @@ def fetch_tomorrow_io(lat, lon):
                 detail = body.get("message") or body.get("error") or body
             except Exception:
                 detail = r.text[:300]
-            return None, f"HTTP {r.status_code}: {detail}"
+            msg = f"HTTP {r.status_code}: {detail}"
+            if r.status_code in (401, 403):
+                provider_backoff_set("tomorrow_io", "API key invalid/inactive or missing endpoint permission")
+            elif r.status_code == 429:
+                provider_backoff_set("tomorrow_io", "rate limit reached")
+            return None, msg
         return r.json(), None
     except Exception as e:
         return None, _safe_error(e)
@@ -666,6 +795,9 @@ def fetch_tomorrow_io(lat, lon):
 def fetch_weatherstack(lat, lon, days=7):
     if not WEATHERSTACK_KEY:
         return None, "no key"
+    blocked = provider_backoff_get("weatherstack")
+    if blocked:
+        return None, f"backoff — {blocked}"
     cache_key = f"{_coord_cache_key(lat, lon)}|days={min(days, 7)}"
     cached = db_cache_get("weatherstack_forecast", cache_key)
     if cached is not None:
@@ -705,7 +837,10 @@ def fetch_weatherstack(lat, lon, days=7):
         db_cache_set("weatherstack_forecast", cache_key, current, min(WEATHERSTACK_TTL_MIN, 30))
         return current, None
 
-    return None, f"forecast failed ({forecast_err}); current failed ({current_err})"
+    combined_err = f"forecast failed ({forecast_err}); current failed ({current_err})"
+    if "429" in combined_err:
+        provider_backoff_set("weatherstack", "rate limit reached", ttl_minutes=12 * 60)
+    return None, combined_err
 
 
 
@@ -727,6 +862,9 @@ def _provider_http_error(response):
 def _fetch_accuweather_location_key(lat, lon):
     if not ACCUWEATHER_KEY:
         return None, "no key"
+    blocked = provider_backoff_get("accuweather_core")
+    if blocked:
+        return None, f"backoff — {blocked}"
     cache_key = _coord_cache_key(lat, lon)
     cached = db_cache_get("accuweather_location", cache_key)
     if isinstance(cached, dict) and cached.get("key"):
@@ -739,7 +877,14 @@ def _fetch_accuweather_location_key(lat, lon):
             timeout=TIMEOUT,
         )
         if not r.ok:
-            return None, _provider_http_error(r)
+            err = _provider_http_error(r)
+            if r.status_code == 401:
+                provider_backoff_set("accuweather_core", "API key is not authorized; verify the active 2026 subscription/key")
+            elif r.status_code == 403:
+                provider_backoff_set("accuweather_core", "Core Weather subscription does not permit this request")
+            elif r.status_code == 429:
+                provider_backoff_set("accuweather_core", "Core Weather rate limit reached")
+            return None, err
         key = r.json().get("Key", "")
         if not key:
             return None, "no location key"
@@ -768,7 +913,14 @@ def fetch_accuweather_hourly(lat, lon):
             timeout=TIMEOUT,
         )
         if not fr.ok:
-            return None, _provider_http_error(fr)
+            err = _provider_http_error(fr)
+            if fr.status_code == 401:
+                provider_backoff_set("accuweather_core", "API key is not authorized; verify the active 2026 subscription/key")
+            elif fr.status_code == 403:
+                provider_backoff_set("accuweather_core", "Core Weather hourly forecast is not enabled for this key")
+            elif fr.status_code == 429:
+                provider_backoff_set("accuweather_core", "Core Weather rate limit reached")
+            return None, err
         data = fr.json()
         db_cache_set("accuweather_hourly", cache_key, data, ACCUWEATHER_HOURLY_TTL_MIN)
         return data, None
@@ -778,17 +930,34 @@ def fetch_accuweather_hourly(lat, lon):
 
 @st.cache_data(ttl=300)
 def fetch_minutecast(lat, lon):
+    """Call MinuteCast at most once per site per six-hour cache window.
+
+    The payload keeps its fetch timestamp. We never reinterpret old minute
+    offsets relative to the current time, which would create fake nowcasts.
+    """
     if not ACCUWEATHER_KEY:
         return None, "no key"
+    if not _supabase_enabled():
+        return None, "disabled — configure Supabase cache first so the 50-request MinuteCast quota is protected"
+    blocked = provider_backoff_get("accuweather_minutecast")
+    if blocked:
+        return None, f"backoff — {blocked}"
+
     cache_key = _coord_cache_key(lat, lon)
-    cached = db_cache_get("accuweather_minutecast", cache_key)
-    if cached is not None:
-        return cached, None
+    cached_record = db_cache_get_record("accuweather_minutecast", cache_key)
+    if cached_record is not None:
+        payload = cached_record.get("payload")
+        if payload is not None:
+            return payload, None
 
     used = db_usage_count_24h("accuweather_minutecast")
     if used is not None and used >= MINUTECAST_SOFT_LIMIT_24H:
-        return None, f"quota guard — {used} MinuteCast calls in last 24h"
+        return None, f"quota guard — {used} MinuteCast requests in rolling 24h; maximum configured is {MINUTECAST_SOFT_LIMIT_24H}"
 
+    # Count attempts, not only successful responses. This is intentionally
+    # conservative because provider quotas can include rejected requests.
+    db_usage_record("accuweather_minutecast")
+    fetched_at = datetime.now(UTC)
     try:
         r = requests.get(
             "https://dataservice.accuweather.com/forecasts/v1/minute",
@@ -797,8 +966,15 @@ def fetch_minutecast(lat, lon):
             timeout=TIMEOUT,
         )
         if not r.ok:
-            return None, _provider_http_error(r)
-        db_usage_record("accuweather_minutecast")
+            err = _provider_http_error(r)
+            if r.status_code == 401:
+                provider_backoff_set("accuweather_minutecast", "API key is not authorized for MinuteCast")
+            elif r.status_code == 403:
+                provider_backoff_set("accuweather_minutecast", "MinuteCast subscription/trial is not enabled for this key")
+            elif r.status_code == 429:
+                provider_backoff_set("accuweather_minutecast", "MinuteCast rate limit reached")
+            return None, err
+
         payload = r.json()
         out = []
         for m in payload.get("Intervals", []):
@@ -813,9 +989,8 @@ def fetch_minutecast(lat, lon):
                 "dbz": dbz,
                 "lightning_rate": lightning_rate,
             })
-        result = out if out else None
-        if result is not None:
-            db_cache_set("accuweather_minutecast", cache_key, result, MINUTECAST_TTL_MIN)
+        result = {"fetched_at": fetched_at.isoformat(), "intervals": out}
+        db_cache_set("accuweather_minutecast", cache_key, result, MINUTECAST_TTL_MIN)
         return result, None
     except Exception as e:
         return None, _safe_error(e)
@@ -840,14 +1015,17 @@ def build_forecast(lat, lon, days=7):
         mc, mc_err = futs["mc"].result()
         ws, ws_err = futs["ws"].result()
 
+    db_ok, db_err = db_health_check()
+
     src_status = {
         "Open-Meteo": "ok" if om else str(om_err),
         "Tomorrow.io": "ok" if tm else str(tm_err),
         "AccuWeather": "ok" if aw else str(aw_err),
-        "MinuteCast": "ok" if mc else str(mc_err),
+        "MinuteCast": _minutecast_status(mc, mc_err),
         "Weatherstack": (("ok — current conditions only" if ws.get("_wim_weatherstack_mode") == "current_only" else "ok") if isinstance(ws, dict) else str(ws_err)),
         "OpenWeather": "ok" if ow else str(ow_err),
         "IMD": "disabled — configure official district/station IDs before enabling",
+        "Supabase cache": "ok" if db_ok else (db_err or "not configured — required for persistent quota-safe caching"),
     }
 
     now_h = now_ist().replace(minute=0, second=0, microsecond=0)
@@ -989,11 +1167,17 @@ def build_forecast(lat, lon, days=7):
                 e.get("RelativeHumidity", 0), e.get("CloudCover", 0), lightning_prob=thunder_prob,
             )
 
-    if mc:
-        now_t = now_ist()
+    mc_active = _active_minutecast_intervals(mc)
+    if mc_active:
         mc_h = collections.defaultdict(lambda: {"rain": 0.0, "lightning_rate": 0.0})
-        for m in mc:
-            hk = (now_t + timedelta(minutes=int(m.get("minute", 0)))).replace(minute=0, second=0, microsecond=0)
+        for m in mc_active:
+            try:
+                event = datetime.fromisoformat(m["forecast_time"])
+                if event.tzinfo is None:
+                    event = IST.localize(event)
+                hk = event.astimezone(IST).replace(minute=0, second=0, microsecond=0)
+            except Exception:
+                continue
             mc_h[hk]["rain"] += float(m.get("mm_per_min", 0) or 0)
             mc_h[hk]["lightning_rate"] = max(mc_h[hk]["lightning_rate"], float(m.get("lightning_rate", 0) or 0))
         for hk, vals in mc_h.items():
@@ -1009,52 +1193,97 @@ def build_forecast(lat, lon, days=7):
     final = []
     for hk in sorted(raw.keys()):
         srcs = raw[hk]
+        lead_h = max(0.0, (hk - now_h).total_seconds() / 3600.0)
 
-        def wavg(field):
-            valid = [(d[field], API_WEIGHTS.get(src, 0)) for src, d in srcs.items() if API_WEIGHTS.get(src, 0) > 0]
+        def source_weight(src, field):
+            # Horizon-aware fusion: short-range point/nowcast data gets more
+            # influence close to now; global-model sources carry the long range.
+            if src == "minutecast":
+                return 0.90 if field in {"rain", "pop"} and lead_h <= 2.1 else 0.0
+            if src == "accuweather":
+                return 0.45 if lead_h <= 12 else 0.0
+            if src == "tomorrow_io":
+                return 0.32 if lead_h <= 48 else 0.28
+            if src == "open_meteo":
+                return 0.30 if lead_h <= 48 else 0.36
+            if src == "weatherstack":
+                return 0.30 if lead_h <= 1.5 else 0.12
+            if src == "openweather":
+                return 0.22
+            return 0.0
+
+        def wavg(field, default=0.0):
+            valid = []
+            for src, d in srcs.items():
+                w = source_weight(src, field)
+                if w <= 0:
+                    continue
+                value = d.get(field)
+                if value is None:
+                    continue
+                valid.append((float(value), w))
             total_weight = sum(weight for _, weight in valid)
-            if total_weight == 0:
-                vals = [d[field] for d in srcs.values()]
-                return sum(vals) / len(vals) if vals else 0
+            if total_weight <= 0:
+                return default
             return sum(value * weight for value, weight in valid) / total_weight
 
-        def wavg_vis():
-            valid_vis = [(d["vis"], API_WEIGHTS.get(src, 0)) for src, d in srcs.items()
-                         if API_WEIGHTS.get(src, 0) > 0 and d["vis"] is not None and d["vis"] >= 0]
-            if not valid_vis:
-                return 10
-            total_weight = sum(weight for _, weight in valid_vis)
-            return sum(vis_value * weight for vis_value, weight in valid_vis) / total_weight if total_weight else 10
-
-        # MinuteCast is nowcast/radar-like short-horizon input, so include it in
-        # the rain median only when it actually reports precipitation.
-        rain_vals = [d["rain"] for src, d in srcs.items() if src != "minutecast" or d["rain"] > 0]
-        if len(rain_vals) >= 2:
-            rain_out = sorted(rain_vals)[len(rain_vals) // 2]
-        elif len(rain_vals) == 1:
-            rain_out = rain_vals[0]
+        # Keep the displayed rainfall as a best-estimate weighted blend. For
+        # safety decisions we also preserve an upper credible estimate rather
+        # than hiding disagreement between providers.
+        rain_candidates = []
+        for src, d in srcs.items():
+            w = source_weight(src, "rain")
+            if w > 0:
+                rain_candidates.append((float(d.get("rain", 0) or 0), w, src))
+        if rain_candidates:
+            tw = sum(w for _, w, _ in rain_candidates)
+            rain_out = sum(v * w for v, w, _ in rain_candidates) / tw if tw else 0.0
+            risk_rain = max(v for v, _, _ in rain_candidates)
         else:
             rain_out = 0.0
-        pop_out = wavg("pop")
+            risk_rain = 0.0
 
-        descs = [d["desc"] for d in srcs.values() if d["desc"]]
+        pop_out = wavg("pop", 0.0)
+        vis_out = wavg("vis", 10.0)
+        temp_out = wavg("temp", 0.0)
+        wind_out = wavg("wind", 0.0)
+        hum_out = wavg("hum", 0.0)
+        cloud_out = wavg("cloud", 0.0)
+
+        descs = [d["desc"] for d in srcs.values() if d.get("desc")]
         best_desc = ""
         if descs:
-            if "accuweather" in srcs and srcs["accuweather"]["desc"]:
+            if "accuweather" in srcs and srcs["accuweather"].get("desc"):
                 best_desc = srcs["accuweather"]["desc"]
             else:
                 best_desc = collections.Counter(descs).most_common(1)[0][0]
 
         lightning_prob = max((d.get("lightning_prob", 0) for d in srcs.values()), default=0)
         lightning_sources = [src for src, d in srcs.items() if d.get("lightning")]
+
+        # Confidence rewards independent source coverage and agreement. It is
+        # diagnostic only; it never suppresses a safety hazard.
+        active_sources = [src for src in srcs if source_weight(src, "rain") > 0]
+        coverage = min(1.0, len(active_sources) / 3.0)
+        rain_values = [v for v, _, _ in rain_candidates]
+        if len(rain_values) >= 2:
+            mean_r = sum(rain_values) / len(rain_values)
+            spread = max(rain_values) - min(rain_values)
+            agreement = max(0.0, 1.0 - spread / max(1.0, mean_r + 0.5))
+        else:
+            agreement = 0.45 if rain_values else 0.0
+        confidence = round(100 * (0.65 * coverage + 0.35 * agreement))
+
         final.append((hk, {
-            "temp": round(wavg("temp"), 1), "rain_mm": round(rain_out, 2),
-            "pop": round(pop_out, 1), "wind_kmh": round(wavg("wind"), 1),
-            "vis_km": round(wavg_vis(), 1), "humidity": round(wavg("hum"), 1),
-            "cloud": round(wavg("cloud"), 0),
+            "temp": round(temp_out, 1), "rain_mm": round(rain_out, 2),
+            "risk_rain_mm": round(risk_rain, 2),
+            "pop": round(pop_out, 1), "wind_kmh": round(wind_out, 1),
+            "vis_km": round(vis_out, 1), "humidity": round(hum_out, 1),
+            "cloud": round(cloud_out, 0),
             "lightning": bool(lightning_sources),
             "lightning_prob": round(lightning_prob, 0),
             "lightning_sources": lightning_sources,
+            "confidence": confidence,
             "desc": best_desc, "n_sources": len(srcs),
         }))
 
@@ -1070,7 +1299,7 @@ def build_forecast(lat, lon, days=7):
                 deduplicated.append((hk, d))
         by_day[date_key] = deduplicated
 
-    return dict(by_day), mc, src_status
+    return dict(by_day), mc_active, src_status
 
 def generate_fixed_slabs():
     slabs = []
@@ -1095,7 +1324,7 @@ def hour_to_slab(h, slabs):
 def build_slabs(hourly, is_today=False):
     slabs = generate_fixed_slabs()
     current_hour = now_ist().hour
-    raw = collections.defaultdict(lambda: dict(rain=0, pop=[], wind=[], vis=[], lightning=[], lightning_prob=[], hum=[], count=0))
+    raw = collections.defaultdict(lambda: dict(rain=0, risk_rain=0, pop=[], wind=[], vis=[], lightning=[], lightning_prob=[], hum=[], confidence=[], count=0))
     for hk, d in hourly:
         sk = hour_to_slab(hk.hour, slabs)
         if not sk:
@@ -1110,12 +1339,14 @@ def build_slabs(hourly, is_today=False):
                 continue
         r = raw[sk]
         r["rain"] += d["rain_mm"]
+        r["risk_rain"] += d.get("risk_rain_mm", d["rain_mm"])
         r["pop"].append(d["pop"])
         r["wind"].append(d["wind_kmh"])
         r["vis"].append(d["vis_km"])
         r["lightning"].append(d["lightning"])
         r["lightning_prob"].append(d.get("lightning_prob", 100 if d["lightning"] else 0))
         r["hum"].append(d["humidity"])
+        r["confidence"].append(d.get("confidence", 0))
         r["count"] += 1
     slabs_out = []
     for sk, r in raw.items():
@@ -1125,8 +1356,10 @@ def build_slabs(hourly, is_today=False):
         pops = r["pop"]
         pop_val = int(sorted(pops)[int(len(pops) * 0.75)] if pops else 0)
         slabs_out.append(dict(label=sk[2], sort=sk[0], mm=round(r["rain"], 1),
+                              risk_mm=round(r["risk_rain"], 1),
                               pop=pop_val, wind=round(avg(r["wind"]), 1),
                               vis=round(avg(r["vis"]), 1), hum=round(avg(r["hum"]), 1),
+                              confidence=round(avg(r["confidence"]), 0),
                               lightning=any(r["lightning"]),
                               lightning_prob=round(max(r["lightning_prob"]) if r["lightning_prob"] else 0, 0)))
     slabs_out.sort(key=lambda x: x["sort"])
@@ -1448,29 +1681,36 @@ def worker_safety_index(hourly, slabs):
 def render_mc(mc):
     if not mc:
         return
-    now = now_ist(); max_dbz = max((m["dbz"] for m in mc), default=1) or 1
+    max_dbz = max((m.get("dbz", 0) for m in mc), default=1) or 1
     bars = ""
     for m in mc:
-        dbz = m["dbz"]
-        t = (now + timedelta(minutes=m["minute"])).strftime("%H:%M")
-        c = ("#F1F5F9" if dbz == 0 or not m["is_precip"] else "#BFDBFE" if dbz < 15 else "#3B82F6" if dbz < 25 else "#1D4ED8" if dbz < 35 else "#D97706" if dbz < 45 else "#DC2626")
+        dbz = m.get("dbz", 0)
+        try:
+            ft = datetime.fromisoformat(m.get("forecast_time", ""))
+            t = ft.strftime("%H:%M")
+        except Exception:
+            t = ""
+        c = ("#F1F5F9" if dbz == 0 or not m.get("is_precip") else "#BFDBFE" if dbz < 15 else "#3B82F6" if dbz < 25 else "#1D4ED8" if dbz < 35 else "#D97706" if dbz < 45 else "#DC2626")
         ht = max(4, int(28 * dbz / max_dbz))
-        bars += f'<span style="display:inline-block;width:4px;height:{ht}px;background:{c};border-radius:1px;margin-right:1px;vertical-align:bottom;" title="{t}"></span>'
+        lightning = float(m.get("lightning_rate", 0) or 0) > 0
+        title = f"{t}{' • lightning' if lightning else ''}"
+        bars += f'<span style="display:inline-block;width:4px;height:{ht}px;background:{c};border-radius:1px;margin-right:1px;vertical-align:bottom;" title="{title}"></span>'
     lbls = ""
     for m in mc:
-        if m["minute"] % 30 == 0:
-            t = (now + timedelta(minutes=m["minute"])).strftime("%H:%M")
+        if int(m.get("minute", 0) or 0) % 30 == 0:
+            try:
+                ft = datetime.fromisoformat(m.get("forecast_time", ""))
+                t = ft.strftime("%H:%M")
+            except Exception:
+                t = ""
             lbls += f'<span style="display:inline-block;width:120px;font-size:0.65rem;color:#94A3B8;">{t}</span>'
     st.markdown(f"""<div class="wim-mc">
-        <div class="wim-mc-title">Minute-by-Minute Precipitation — Next 2 Hours (AccuWeather Radar)</div>
+        <div class="wim-mc-title">Minute-by-Minute Precipitation — Active AccuWeather Nowcast</div>
         <div style="white-space:nowrap;display:flex;align-items:flex-end;gap:0;">{bars}</div>
         <div style="white-space:nowrap;margin-top:6px;">{lbls}</div>
-        <div style="margin-top:8px;font-size:0.65rem;color:#94A3B8;display:flex;gap:12px;flex-wrap:wrap;">
-            <span><span style="display:inline-block;width:8px;height:8px;background:#BFDBFE;border-radius:1px;margin-right:3px;vertical-align:middle;"></span>Light</span>
-            <span><span style="display:inline-block;width:8px;height:8px;background:#3B82F6;border-radius:1px;margin-right:3px;vertical-align:middle;"></span>Moderate</span>
-            <span><span style="display:inline-block;width:8px;height:8px;background:#1D4ED8;border-radius:1px;margin-right:3px;vertical-align:middle;"></span>Heavy</span>
-            <span><span style="display:inline-block;width:8px;height:8px;background:#DC2626;border-radius:1px;margin-right:3px;vertical-align:middle;"></span>Very Heavy</span>
-        </div></div>""", unsafe_allow_html=True)
+        <div style="margin-top:8px;font-size:0.65rem;color:#94A3B8;">MinuteCast is refreshed per mine at most once every 6 hours to stay within the 50-request rolling-24h trial limit. Cached data is used only inside its original ~2-hour forecast horizon.</div>
+        </div>""", unsafe_allow_html=True)
+
 
 def render_hourly_graph(hourly, target_day):
     if not hourly:
@@ -1738,11 +1978,24 @@ if by_day:
     with st.expander("Data source health", expanded=False):
         status_cols = st.columns(2)
         for idx, (source_name, source_state) in enumerate(src_status.items()):
-            ok_state = source_state == "ok"
-            label = "✓ online" if ok_state else source_state
+            ok_state = str(source_state).startswith("ok")
+            label = ("✓ " + ("online" if source_state == "ok" else source_state)) if ok_state else source_state
             status_cols[idx % 2].caption(f"{source_name}: {label}")
+# A mine-operations forecast should not look equally certain when only one
+# weather provider is actually contributing. Surface this explicitly.
+live_weather_sources = [
+    s for s, v in src_status.items()
+    if s not in {"IMD", "Supabase cache"} and str(v).startswith("ok")
+]
+if by_day and len(live_weather_sources) < 2:
+    st.markdown(
+        '<div class="wim-alert wim-alert-moderate"><div class="wim-alert-label">Reduced forecast confidence</div>'
+        'Only one live forecast source is currently contributing. WIM can still show planning guidance, but do not use it as the sole real-time stop-work/lightning safety signal until additional providers or mine-site observations are online.</div>',
+        unsafe_allow_html=True,
+    )
+
 if not by_day:
-    ok = [s for s, v in src_status.items() if v == "ok"]
+    ok = [s for s, v in src_status.items() if str(v).startswith("ok")]
     fail = {s: v for s, v in src_status.items() if v != "ok"}
     hint = ""
     if any("401" in str(v) or "Unauthorized" in str(v) for v in fail.values()):
@@ -1870,7 +2123,7 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
                     l_td = f'<td class="td-alert"><span class="wim-badge b-lightning">{l_label}</span></td>'
                 else:
                     l_td = '<td style="color:#94A3B8;">—</td>'
-                impact = mining_impact_html(mm, w, v, s["lightning"])
+                impact = mining_impact_html(max(mm, s.get("risk_mm", mm)), w, v, s["lightning"])
                 rows += f'<tr><td style="font-weight:600;color:#334155;">{s["label"]}</td>{rain_td}<td style="color:#64748B;">{s["pop"] if mm > 0 else 0}%</td>{wind_td}{vis_td}{l_td}<td>{impact}</td></tr>'
             st.markdown('<div style="overflow-x:auto;"><table class="wim-table"><thead><tr><th>Time Window</th><th>Rainfall</th><th>Probability</th><th>Wind Speed</th><th>Visibility</th><th>Lightning</th><th>Mining Impact</th></tr></thead><tbody>' + rows + '</tbody></table></div>', unsafe_allow_html=True)
         st.markdown('<div class="wim-section">Hourly Operations Timeline</div>', unsafe_allow_html=True)
