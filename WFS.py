@@ -276,7 +276,9 @@ def _secret(name, default=""):
         value = None
     if value is None or value == "":
         value = os.getenv(name, default)
-    return value
+    # Streamlit TOML values occasionally end up with copied spaces/newlines.
+    # Trim string secrets so a valid provider key is not rejected as invalid.
+    return value.strip() if isinstance(value, str) else value
 
 def _secret_bool(name, default=False):
     value = _secret(name, str(default))
@@ -640,10 +642,21 @@ def fetch_tomorrow_io(lat, lon):
     if not TOMORROWIO_KEY:
         return None, "no key"
     try:
+        # Tomorrow.io supports either ?apikey= or an apikey request header.
+        # Header auth avoids leaking the key into exception URLs/logs.
         r = requests.get(
-            f"https://api.tomorrow.io/v4/weather/forecast?location={lat},{lon}"
-            f"&units=metric&apikey={TOMORROWIO_KEY}", timeout=TIMEOUT)
-        r.raise_for_status()
+            "https://api.tomorrow.io/v4/weather/forecast",
+            headers={"apikey": TOMORROWIO_KEY, "Accept": "application/json"},
+            params={"location": f"{lat},{lon}", "units": "metric"},
+            timeout=TIMEOUT,
+        )
+        if not r.ok:
+            try:
+                body = r.json()
+                detail = body.get("message") or body.get("error") or body
+            except Exception:
+                detail = r.text[:300]
+            return None, f"HTTP {r.status_code}: {detail}"
         return r.json(), None
     except Exception as e:
         return None, _safe_error(e)
@@ -657,28 +670,59 @@ def fetch_weatherstack(lat, lon, days=7):
     cached = db_cache_get("weatherstack_forecast", cache_key)
     if cached is not None:
         return cached, None
-    try:
-        r = requests.get(
-            "https://api.weatherstack.com/forecast",
-            params={
-                "access_key": WEATHERSTACK_KEY,
-                "query": f"{lat},{lon}",
-                "forecast_days": min(days, 7),
-                "hourly": 1,
-                "units": "m",
-            },
-            timeout=TIMEOUT,
-        )
-        r.raise_for_status()
-        data = r.json()
-        err = _weatherstack_error(data)
-        if err:
-            return None, err
-        db_cache_set("weatherstack_forecast", cache_key, data, WEATHERSTACK_TTL_MIN)
-        return data, None
-    except Exception as e:
-        return None, _safe_error(e)
 
+    def _call(endpoint, params):
+        r = requests.get(f"https://api.weatherstack.com/{endpoint}", params=params, timeout=TIMEOUT)
+        try:
+            data = r.json()
+        except Exception:
+            data = None
+        api_err = _weatherstack_error(data) if data is not None else None
+        if r.ok and not api_err:
+            return data, None
+        detail = api_err or (r.text[:300] if r.text else f"HTTP {r.status_code}")
+        return None, f"HTTP {r.status_code}: {detail}"
+
+    base = {"access_key": WEATHERSTACK_KEY, "query": f"{lat},{lon}", "units": "m"}
+    forecast, forecast_err = _call("forecast", {
+        **base,
+        "forecast_days": min(days, 7),
+        "hourly": 1,
+        "interval": 1,
+    })
+    if forecast is not None:
+        forecast["_wim_weatherstack_mode"] = "forecast"
+        db_cache_set("weatherstack_forecast", cache_key, forecast, WEATHERSTACK_TTL_MIN)
+        return forecast, None
+
+    # Weatherstack forecast data is plan-gated. A free/current-only key is still
+    # useful for hyperlocal present conditions, so degrade gracefully instead
+    # of marking the entire provider dead.
+    current, current_err = _call("current", base)
+    if current is not None:
+        current["_wim_weatherstack_mode"] = "current_only"
+        current["_wim_forecast_error"] = forecast_err
+        db_cache_set("weatherstack_forecast", cache_key, current, min(WEATHERSTACK_TTL_MIN, 30))
+        return current, None
+
+    return None, f"forecast failed ({forecast_err}); current failed ({current_err})"
+
+
+
+def _accuweather_headers():
+    # Current AccuWeather Developer API uses Bearer authentication.
+    return {"Authorization": f"Bearer {ACCUWEATHER_KEY}", "Accept": "application/json"}
+
+def _provider_http_error(response):
+    try:
+        body = response.json()
+        if isinstance(body, dict):
+            detail = body.get("message") or body.get("Message") or body.get("error") or body
+        else:
+            detail = body
+    except Exception:
+        detail = response.text[:300] if response.text else response.reason
+    return f"HTTP {response.status_code}: {detail}"
 
 def _fetch_accuweather_location_key(lat, lon):
     if not ACCUWEATHER_KEY:
@@ -690,14 +734,15 @@ def _fetch_accuweather_location_key(lat, lon):
     try:
         r = requests.get(
             "https://dataservice.accuweather.com/locations/v1/cities/geoposition/search",
-            params={"q": f"{lat},{lon}", "apikey": ACCUWEATHER_KEY},
+            headers=_accuweather_headers(),
+            params={"q": f"{lat},{lon}"},
             timeout=TIMEOUT,
         )
-        r.raise_for_status()
+        if not r.ok:
+            return None, _provider_http_error(r)
         key = r.json().get("Key", "")
         if not key:
             return None, "no location key"
-        # Cache rather than hard-code. This still refreshes periodically.
         db_cache_set("accuweather_location", cache_key, {"key": key}, ACCUWEATHER_LOCATION_TTL_MIN)
         return key, None
     except Exception as e:
@@ -718,10 +763,12 @@ def fetch_accuweather_hourly(lat, lon):
     try:
         fr = requests.get(
             f"https://dataservice.accuweather.com/forecasts/v1/hourly/12hour/{key}",
-            params={"apikey": ACCUWEATHER_KEY, "details": "true", "metric": "true"},
+            headers=_accuweather_headers(),
+            params={"details": "true", "metric": "true"},
             timeout=TIMEOUT,
         )
-        fr.raise_for_status()
+        if not fr.ok:
+            return None, _provider_http_error(fr)
         data = fr.json()
         db_cache_set("accuweather_hourly", cache_key, data, ACCUWEATHER_HOURLY_TTL_MIN)
         return data, None
@@ -738,7 +785,6 @@ def fetch_minutecast(lat, lon):
     if cached is not None:
         return cached, None
 
-    # Free MinuteCast trial is tiny. Leave headroom instead of exhausting it.
     used = db_usage_count_24h("accuweather_minutecast")
     if used is not None and used >= MINUTECAST_SOFT_LIMIT_24H:
         return None, f"quota guard — {used} MinuteCast calls in last 24h"
@@ -746,10 +792,12 @@ def fetch_minutecast(lat, lon):
     try:
         r = requests.get(
             "https://dataservice.accuweather.com/forecasts/v1/minute",
-            params={"q": f"{lat},{lon}", "apikey": ACCUWEATHER_KEY, "details": "true"},
+            headers=_accuweather_headers(),
+            params={"q": f"{lat},{lon}"},
             timeout=TIMEOUT,
         )
-        r.raise_for_status()
+        if not r.ok:
+            return None, _provider_http_error(r)
         db_usage_record("accuweather_minutecast")
         payload = r.json()
         out = []
@@ -797,7 +845,7 @@ def build_forecast(lat, lon, days=7):
         "Tomorrow.io": "ok" if tm else str(tm_err),
         "AccuWeather": "ok" if aw else str(aw_err),
         "MinuteCast": "ok" if mc else str(mc_err),
-        "Weatherstack": "ok" if ws else str(ws_err),
+        "Weatherstack": (("ok — current conditions only" if ws.get("_wim_weatherstack_mode") == "current_only" else "ok") if isinstance(ws, dict) else str(ws_err)),
         "OpenWeather": "ok" if ow else str(ow_err),
         "IMD": "disabled — configure official district/station IDs before enabling",
     }
@@ -902,6 +950,24 @@ def build_forecast(lat, lon, days=7):
                     e.get("humidity", 0), e.get("cloudcover", e.get("cloud_cover", 0)),
                     lightning_prob=thunder_prob if thunder_prob > 0 else (100 if thunder else 0),
                 )
+
+        # Free/current-only Weatherstack accounts can still improve the present
+        # hour without pretending to provide a multi-day forecast.
+        if ws.get("_wim_weatherstack_mode") == "current_only" and isinstance(ws.get("current"), dict):
+            e = ws["current"]
+            descs = e.get("weather_descriptions") or []
+            desc = descs[0] if descs else ""
+            try:
+                wcode = int(e.get("weather_code") or 0)
+            except Exception:
+                wcode = 0
+            thunder = "thunder" in desc.lower() or wcode in {386, 389, 392, 395}
+            add(
+                now_h, "weatherstack", e.get("temperature", 0), e.get("precip", 0), 0,
+                e.get("wind_speed", 0), e.get("visibility", 10), thunder, desc,
+                e.get("humidity", 0), e.get("cloudcover", 0),
+                lightning_prob=100 if thunder else 0,
+            )
 
     if aw:
         for e in aw:
