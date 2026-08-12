@@ -1,7 +1,7 @@
 """
 Adani Natural Resources — WIM (Weather Intelligence Mining)
 v3.4 — Clean version, JSON-only site management,
-mining impact column,
+hourly precipitation for all days, mining impact column,
 underground (incline/shaft) sites, tab-fix CSS, expander-arrow-overlap fix
 """
 import os, json, requests, collections, base64, concurrent.futures
@@ -168,6 +168,7 @@ div[data-testid="stExpander"] summary p{{margin:0 !important;flex:1 1 auto !impo
 div[data-testid="stExpander"] summary [data-testid="stIconMaterial"]{{order:2 !important;flex:0 0 auto !important;position:static !important;margin-left:auto !important;}}
 div[data-testid="stExpander"] details summary{{list-style:none !important;}}
 div[data-testid="stExpander"] details summary::-webkit-details-marker{{display:none !important;}}
+.hour-row-rain{{background:#EFF6FF;}}.hour-row-heavy{{background:#FFF7ED;}}.hour-row-alert{{background:#FFF1F2;}}
 .db-badge-ok{{display:inline-block;background:#D1FAE5;color:#065F46;border-radius:4px;padding:2px 8px;font-size:0.65rem;font-weight:700;}}
 .db-badge-local{{display:inline-block;background:#FEF3C7;color:#92400E;border-radius:4px;padding:2px 8px;font-size:0.65rem;font-weight:700;}}
 div[data-testid="stSelectbox"]{{margin-left:auto !important;max-width:180px !important;}}
@@ -1089,6 +1090,58 @@ def render_mc(mc):
             <span><span style="display:inline-block;width:8px;height:8px;background:#DC2626;border-radius:1px;margin-right:3px;vertical-align:middle;"></span>Very Heavy</span>
         </div></div>""", unsafe_allow_html=True)
 
+def render_hourly_table(hourly, target_day):
+    if not hourly:
+        st.markdown('<div class="wim-alert wim-alert-none">No hourly data available.</div>', unsafe_allow_html=True)
+        return
+    today = now_ist().date()
+    ist_now_h = now_ist().replace(minute=0, second=0, microsecond=0)
+    rows = ""
+    seen_hours = set()
+    for hk, d in sorted(hourly, key=lambda x: x[0]):
+        h_key = hk.strftime("%Y-%m-%d %H:00")
+        if h_key in seen_hours:
+            continue
+        seen_hours.add(h_key)
+        if target_day == today and hk < ist_now_h:
+            continue
+        mm = d["rain_mm"]; wind = d["wind_kmh"]; vis = d["vis_km"]
+        pop = d["pop"]; temp = d["temp"]; hum = d["humidity"]; light = d["lightning"]; cloud = d.get("cloud", 0)
+        h_lbl = hk.strftime("%I:%M %p")
+        if light or mm >= RAIN_HEAVY or vis <= VIS_STOP or wind >= WIND_STOP:
+            row_cls = ' class="hour-row-alert"'
+        elif mm >= RAIN_MOD or vis <= VIS_CAUTION or wind >= WIND_CAUTION:
+            row_cls = ' class="hour-row-heavy"'
+        elif mm > 0:
+            row_cls = ' class="hour-row-rain"'
+        else:
+            row_cls = ''
+        wind_td = f'<td class="td-alert">{wind} km/h</td>' if wind >= WIND_STOP else (f'<td class="td-warn">{wind} km/h</td>' if wind >= WIND_CAUTION else f'<td>{wind} km/h</td>')
+        vis_td = f'<td class="td-alert">{vis} km</td>' if vis <= VIS_STOP else (f'<td class="td-warn">{vis} km</td>' if vis <= VIS_CAUTION else f'<td>{vis} km</td>')
+        pop_td = f'<td class="td-alert">{pop}%</td>' if pop >= 70 else (f'<td class="td-warn">{pop}%</td>' if pop >= 40 else f'<td>{pop}%</td>')
+        cloud_td = f'<td style="color:#64748B;">{int(cloud)}%</td>' if cloud else '<td style="color:#94A3B8;">—</td>'
+        l_td = '<td class="td-alert"><span class="wim-badge b-lightning">⚡ Alert</span></td>' if light else '<td style="color:#94A3B8;">—</td>'
+        impact = mining_impact_html(mm, wind, vis, light)
+        rows += (f"<tr{row_cls}><td style='font-weight:700;color:#334155;white-space:nowrap;'>{h_lbl}</td>"
+                 f"<td>{rain_badge_html(mm)}</td>{pop_td}<td>{temp}°C</td><td>{hum}%</td>{cloud_td}"
+                 f"{wind_td}{vis_td}{l_td}<td>{impact}</td></tr>")
+    if not rows:
+        st.markdown('<div class="wim-alert wim-alert-none">No upcoming hourly data for this day.</div>', unsafe_allow_html=True)
+        return
+    st.markdown(
+        '<div style="overflow-x:auto;">'
+        '<table class="wim-table"><thead><tr>'
+        '<th>Hour</th><th>Rainfall</th><th>Rain Prob.</th><th>Temp</th><th>Humidity</th><th>Cloud</th>'
+        '<th>Wind</th><th>Visibility</th><th>Lightning</th><th>Mining Impact</th>'
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>',
+        unsafe_allow_html=True)
+    st.markdown(
+        '<div style="margin-top:8px;display:flex;gap:16px;flex-wrap:wrap;font-size:0.68rem;color:#64748B;">'
+        '<span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#FFF1F2;border:1px solid #FECDD3;display:inline-block;"></span>Stop operations</span>'
+        '<span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#FFF7ED;border:1px solid #FDE68A;display:inline-block;"></span>Caution / monitor</span>'
+        '<span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#EFF6FF;border:1px solid #BFDBFE;display:inline-block;"></span>Rain present, ops normal</span>'
+        '</div>', unsafe_allow_html=True)
+
 def render_hourly_graph(hourly, target_day):
     if not hourly:
         return
@@ -1480,6 +1533,9 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
             st.markdown('<div style="overflow-x:auto;"><table class="wim-table"><thead><tr><th>Time Window</th><th>Rainfall</th><th>Probability</th><th>Wind Speed</th><th>Visibility</th><th>Lightning</th><th>Mining Impact</th></tr></thead><tbody>' + rows + '</tbody></table></div>', unsafe_allow_html=True)
         st.markdown('<div class="wim-section">Hourly Operations Timeline</div>', unsafe_allow_html=True)
         render_hourly_graph(dh, tday)
+        st.markdown('<hr class="wim-hr">', unsafe_allow_html=True)
+        st.markdown('<div class="wim-section">Full Hourly Precipitation Table</div>', unsafe_allow_html=True)
+        render_hourly_table(dh, tday)
 srcs = ["Open-Meteo (ECMWF)"]
 if ACCUWEATHER_KEY: srcs += ["AccuWeather", "MinuteCast (radar)"]
 if OPENWEATHER_KEY: srcs.append("OpenWeather")
