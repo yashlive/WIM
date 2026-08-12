@@ -1,19 +1,14 @@
 """
 Adani Natural Resources — WIM (Weather Intelligence Mining)
-v3.4 — repaired full working file
+v3.4 — Clean version, JSON-only site management,
+mining impact column,
+underground (incline/shaft) sites, tab-fix CSS, expander-arrow-overlap fix
 """
-
-import os
-import json
-import requests
-import collections
-import base64
-import concurrent.futures
+import os, json, requests, collections, base64, concurrent.futures
+import streamlit.components.v1 as components
 from datetime import datetime, timedelta
-
 import pytz
 import streamlit as st
-import streamlit.components.v1 as components
 
 try:
     from dotenv import load_dotenv
@@ -23,11 +18,10 @@ except ImportError:
 
 st.set_page_config(
     page_title="WIM — Weather Intelligence Mining | Adani Natural Resources",
-    page_icon="🌦️",
+    page_icon="\U0001f326",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
-
 
 def load_asset_b64(path):
     try:
@@ -36,10 +30,8 @@ def load_asset_b64(path):
     except Exception:
         return ""
 
-
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _CS_DIR = "/workspaces/weather-forecast-mines"
-
 
 def _asset_path(filename):
     for base in [_SCRIPT_DIR, _CS_DIR]:
@@ -48,7 +40,6 @@ def _asset_path(filename):
             return p
     return os.path.join(_SCRIPT_DIR, filename)
 
-
 LOGO_PATH = _asset_path("Adani_2012_logo.png")
 FONT_PATH = _asset_path("adani-regular.ttf")
 LOGO_B64 = load_asset_b64(LOGO_PATH)
@@ -56,261 +47,409 @@ FONT_B64 = load_asset_b64(FONT_PATH)
 _FONT_LOADED = bool(FONT_B64)
 _LOGO_LOADED = bool(LOGO_B64)
 
-LOGO_HTML = (
-    f'<img src="data:image/png;base64,{LOGO_B64}" style="height:44px;display:block;" alt="Adani">'
-    if LOGO_B64
-    else '<span style="font-size:1.6rem;font-weight:900;color:#0B74B0;">adani</span>'
-)
-_FONT_STACK = (
-    "'AdaniFont', 'Helvetica Neue', Arial, sans-serif"
-    if FONT_B64
-    else "'Helvetica Neue', Arial, sans-serif"
-)
-FONT_FACE = (
-    f"@font-face{{font-family:'AdaniFont';src:url('data:font/truetype;base64,{FONT_B64}') format('truetype');font-weight:normal;font-style:normal;}}"
-    if FONT_B64
-    else ""
-)
+LOGO_HTML = f'<img src="data:image/png;base64,{LOGO_B64}" style="height:44px;display:block;" alt="Adani">' if LOGO_B64 else '<span style="font-size:1.6rem;font-weight:900;color:#0B74B0;">adani</span>'
+_FONT_STACK = ("'AdaniFont', 'Helvetica Neue', Arial, sans-serif" if FONT_B64 else "'Helvetica Neue', Arial, sans-serif")
+FONT_FACE = f"@font-face{{font-family:'AdaniFont';src:url('data:font/truetype;base64,{FONT_B64}') format('truetype');font-weight:normal;font-style:normal;}}" if FONT_B64 else ""
 
-_CSS = f"""
+_CSS = f"""<style>
 {FONT_FACE}
-*{{box-sizing:border-box}}
-html,body,.stApp,[data-testid="stAppViewContainer"],.block-container{{font-family:{_FONT_STACK} !important;}}
+*,*::before,*::after{{box-sizing:border-box;}}
+html,body,[class*="css"],.stApp,.stApp *,[data-testid="stAppViewContainer"],[data-testid="stAppViewContainer"] *,.block-container,.block-container *{{font-family:{_FONT_STACK} !important;}}
+[data-testid="stIconMaterial"],
+[data-testid="stIconMaterial"] *,
+span[data-testid="stIconMaterial"],
+.material-icons,
+[class*="MaterialIcon"],
+i.material-icons{{
+    font-family:"Material Symbols Rounded","Material Icons" !important;
+    -webkit-text-fill-color:initial !important;
+}}
 .stApp{{background:#F8F9FA !important;color:#1A1A2E !important;}}
+#MainMenu,footer{{visibility:hidden;}}
+header[data-testid="stHeader"]{{background:transparent !important;z-index:999999 !important;}}
+header[data-testid="stHeader"] button[kind="header"],header[data-testid="stHeader"] .stDeployButton,[data-testid="stToolbar"]{{display:none !important;}}
 .block-container{{padding:0.25rem 2rem 2rem 2rem !important;max-width:1400px !important;margin:0 auto !important;}}
-.wim-nav{{background:#fff;border-bottom:1px solid #E2E8F0;height:64px;display:flex;align-items:center;justify-content:space-between;position:fixed;top:0;left:0;right:0;z-index:9999;padding:0 2rem 0 2.5rem;box-shadow:0 1px 4px rgba(0,0,0,0.06);}}
+[data-testid="stAppViewContainer"]>.main{{background:#F8F9FA;padding-top:0 !important;}}
+.wim-nav{{background:#FFFFFF;border-bottom:1px solid #E2E8F0;height:64px;display:flex;align-items:center;justify-content:space-between;position:fixed;top:0;left:0;right:0;z-index:9999;padding:0 2rem 0 2.5rem;box-shadow:0 1px 4px rgba(0,0,0,0.06);}}
 .wim-nav-spacer{{height:56px;}}
 .wim-nav-left{{display:flex;align-items:center;gap:16px;}}
 .wim-nav-sep{{width:1px;height:28px;background:linear-gradient(180deg,#0B74B0,#16A34A);}}
+.wim-nav-text{{line-height:1.25;}}
 .wim-nav-title{{font-size:0.875rem;font-weight:700;background:linear-gradient(90deg,#0B74B0,#16A34A);-webkit-background-clip:text;background-clip:text;color:transparent;}}
-.wim-nav-sub{{font-size:0.65rem;font-weight:500;color:#94A3B8;letter-spacing:0.1em;text-transform:uppercase;}}
+.wim-nav-sub{{font-size:0.65rem;font-weight:500;color:#94A3B8;letter-spacing:0.1em;text-transform:uppercase;margin-top:1px;}}
+.wim-page{{margin-top:0;padding-top:0;}}
+.wim-site-row{{display:flex;align-items:baseline;gap:8px;margin:0 0 4px 0;}}
 .wim-site-name{{font-size:1.375rem;font-weight:700;color:#1A1A2E;}}
 .wim-site-coord{{font-size:0.75rem;color:#94A3B8;}}
-.wim-section{{font-size:0.65rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#94A3B8;margin:8px 0 10px 0;padding-bottom:6px;border-bottom:1px solid #E2E8F0;}}
 .wim-alert{{border-radius:8px;padding:14px 18px;margin:14px 0;font-size:0.875rem;line-height:1.6;border:1px solid;border-left:5px solid;}}
+.wim-alert-label{{font-size:0.65rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px;display:flex;align-items:center;gap:6px;}}
+.wim-alert-label::before{{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0;}}
+.wim-alert-high{{background:#FFF1F2;border-color:#FECDD3;border-left-color:#DC2626;color:#881337;}}
+.wim-alert-high .wim-alert-label::before{{background:#DC2626;}}
+.wim-alert-moderate{{background:#FFFBEB;border-color:#FDE68A;border-left-color:#D97706;color:#78350F;}}
+.wim-alert-moderate .wim-alert-label::before{{background:#D97706;}}
+.wim-alert-low{{background:#F0FDF4;border-color:#BBF7D0;border-left-color:#16A34A;color:#14532D;}}
+.wim-alert-low .wim-alert-label::before{{background:#16A34A;}}
 .wim-alert-none{{background:#F8FAFC;border-color:#E2E8F0;border-left-color:#94A3B8;color:#475569;}}
-.wim-table{{width:100%;border-collapse:collapse;background:#fff;border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;font-size:0.845rem;}}
-.wim-table th,.wim-table td{{padding:10px 16px;border-bottom:1px solid #F1F5F9;}}
+.wim-alert-none .wim-alert-label::before{{background:#94A3B8;}}
+.wim-section{{font-size:0.65rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#94A3B8;margin:8px 0 10px 0;padding-bottom:6px;border-bottom:1px solid #E2E8F0;}}
+.wim-metric{{background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:16px 18px;height:100%;}}
+.wim-metric-label{{font-size:0.65rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#94A3B8;margin-bottom:6px;}}
+.wim-metric-value{{font-size:1.375rem;font-weight:700;color:#1A1A2E;letter-spacing:-0.02em;line-height:1.2;}}
+.wim-day{{background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:14px 10px;text-align:center;height:100%;}}
+.wim-day-active{{border-color:#0B74B0;border-width:2px;}}
+.wim-day-label{{font-size:0.65rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#94A3B8;}}
+.wim-day-date{{font-size:0.68rem;color:#94A3B8;margin:2px 0 8px;}}
+.wim-day-cond{{font-size:0.82rem;font-weight:600;color:#1A1A2E;margin-bottom:4px;}}
+.wim-day-rain{{font-size:1.1rem;font-weight:700;color:#0B74B0;line-height:1.2;}}
+.wim-day-temp{{font-size:0.7rem;color:#64748B;margin-top:4px;}}
+.wim-day-flag{{display:inline-block;font-size:0.65rem;font-weight:700;border-radius:4px;padding:2px 8px;margin-top:6px;}}
+.flag-clear{{background:#F0FDF4;color:#16A34A;}}
+.flag-light{{background:#EFF6FF;color:#1D4ED8;}}
+.flag-moderate{{background:#FFFBEB;color:#D97706;}}
+.flag-heavy{{background:#FFF1F2;color:#DC2626;}}
+.flag-drizzle{{background:#F0F9FF;color:#0EA5E9;}}
+.flag-lightning{{background:#FEF3C7;color:#F59E0B;}}
+.wim-accum{{background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:14px 10px;text-align:center;height:100%;}}
+.wim-accum-period{{font-size:0.62rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#94A3B8;}}
+.wim-accum-val{{font-size:1.35rem;font-weight:700;color:#1A1A2E;margin:4px 0 2px;}}
+.wim-accum-pop{{font-size:0.7rem;color:#94A3B8;}}
+.wim-accum-risk{{font-size:0.68rem;font-weight:700;margin-top:4px;}}
+.risk-safe{{color:#16A34A;}}.risk-watch{{color:#D97706;}}.risk-high{{color:#DC2626;}}
+.acc-safe{{border-top:3px solid #16A34A;}}.acc-watch{{border-top:3px solid #D97706;}}.acc-high{{border-top:3px solid #DC2626;}}
+.wim-table{{width:100%;border-collapse:collapse;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;font-size:0.845rem;}}
+.wim-table thead tr{{background:#F8FAFC;}}
+.wim-table th{{padding:10px 16px;text-align:left;font-size:0.62rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#94A3B8;border-bottom:1px solid #E2E8F0;white-space:nowrap;}}
+.wim-table td{{padding:11px 16px;border-bottom:1px solid #F1F5F9;color:#1A1A2E;font-weight:500;vertical-align:middle;}}
+.wim-table tr:last-child td{{border-bottom:none;}}
+.wim-table tr:hover td{{background:#FAFAFA;}}
+.td-warn{{background:#FFFBEB !important;color:#92400E;font-weight:700;}}
+.td-alert{{background:#FFF1F2 !important;color:#9F1239;font-weight:700;}}
 .wim-badge{{display:inline-block;border-radius:4px;padding:2px 8px;font-size:0.68rem;font-weight:700;white-space:nowrap;}}
-"""
+.b-none{{background:#F1F5F9;color:#64748B;}}.b-drizzle{{background:#EFF6FF;color:#1D4ED8;}}
+.b-light{{background:#DBEAFE;color:#1E40AF;}}.b-moderate{{background:#BFDBFE;color:#1E40AF;}}
+.b-heavy{{background:#FEF3C7;color:#D97706;}}.b-vheavy{{background:#FEE2E2;color:#DC2626;}}
+.b-lightning{{background:#FFF1F2;color:#DC2626;}}
+.b-stop{{background:#FEE2E2;color:#991B1B;}}.b-caution{{background:#FEF3C7;color:#92400E;}}
+.b-monitor{{background:#BFDBFE;color:#1E40AF;}}.b-clear-ops{{background:#D1FAE5;color:#065F46;}}
+.wim-mc{{background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:16px 18px;overflow-x:auto;}}
+.wim-mc-title{{font-size:0.62rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#94A3B8;margin-bottom:10px;}}
+hr.wim-hr{{border:none;border-top:1px solid #E2E8F0;margin:12px 0;}}
+.stColumns{{gap:12px !important;}}
+[data-testid="stHorizontalBlock"]{{gap:12px !important;}}
+.stTabs [data-baseweb="tab-list"]{{gap:0;border-bottom:2px solid #E2E8F0;background:transparent;}}
+.stTabs [data-baseweb="tab"], .stTabs [role="tab"]{{
+    background:transparent !important;border:none !important;
+    border-bottom:2px solid transparent !important;margin-bottom:-2px !important;
+    opacity:1 !important;visibility:visible !important;padding:10px 18px !important;
+}}
+.stTabs [data-baseweb="tab"] p, .stTabs [data-baseweb="tab"] div, .stTabs [data-baseweb="tab"] span,
+.stTabs [role="tab"] p, .stTabs [role="tab"] div, .stTabs [role="tab"] span{{
+    color:#64748B !important; font-size:0.82rem !important; font-weight:600 !important;
+    -webkit-text-fill-color:#64748B !important; opacity:1 !important;
+}}
+.stTabs [data-baseweb="tab"]:hover, .stTabs [role="tab"]:hover{{
+    background:#F0F7FF !important;border-radius:6px 6px 0 0;
+}}
+.stTabs [data-baseweb="tab"]:hover p, .stTabs [data-baseweb="tab"]:hover div, .stTabs [data-baseweb="tab"]:hover span,
+.stTabs [role="tab"]:hover p, .stTabs [role="tab"]:hover div, .stTabs [role="tab"]:hover span{{
+    color:#0B74B0 !important; -webkit-text-fill-color:#0B74B0 !important;
+}}
+.stTabs [aria-selected="true"]{{border-bottom:2px solid #0B74B0 !important;background:transparent !important;}}
+.stTabs [aria-selected="true"] p, .stTabs [aria-selected="true"] div, .stTabs [aria-selected="true"] span{{
+    color:#0B74B0 !important; font-weight:700 !important; -webkit-text-fill-color:#0B74B0 !important;
+}}
+.stTabs [data-baseweb="tab-highlight"]{{background:#0B74B0 !important;height:2px !important;}}
+.stTabs [data-baseweb="tab-border"]{{display:none !important;}}
+.streamlit-expanderHeader{{font-size:0.82rem !important;font-weight:700 !important;color:#1A1A2E !important;background:#F8FAFC !important;border:1px solid #E2E8F0 !important;border-radius:8px !important;padding:10px 14px !important;}}
+.streamlit-expanderContent{{border:1px solid #E2E8F0 !important;border-top:none !important;border-radius:0 0 8px 8px !important;padding:14px !important;}}
+div[data-testid="stExpander"] summary{{display:flex !important;align-items:center !important;gap:8px !important;padding:10px 14px !important;}}
+div[data-testid="stExpander"] summary p{{margin:0 !important;flex:1 1 auto !important;order:1 !important;}}
+div[data-testid="stExpander"] summary [data-testid="stIconMaterial"]{{order:2 !important;flex:0 0 auto !important;position:static !important;margin-left:auto !important;}}
+div[data-testid="stExpander"] details summary{{list-style:none !important;}}
+div[data-testid="stExpander"] details summary::-webkit-details-marker{{display:none !important;}}
+.db-badge-ok{{display:inline-block;background:#D1FAE5;color:#065F46;border-radius:4px;padding:2px 8px;font-size:0.65rem;font-weight:700;}}
+.db-badge-local{{display:inline-block;background:#FEF3C7;color:#92400E;border-radius:4px;padding:2px 8px;font-size:0.65rem;font-weight:700;}}
+div[data-testid="stSelectbox"]{{margin-left:auto !important;max-width:180px !important;}}
+div[data-testid="stSelectbox"] > div > div{{background:#FFFFFF !important;border:1px solid #6B7280 !important;border-radius:6px !important;}}
+div[data-testid="stSelectbox"] > div > div:hover{{border-color:#374151 !important;}}
+div[data-testid="stSelectbox"] *{{color:#000000 !important;}}
+div[data-testid="stSelectbox"] [role="button"],div[data-testid="stSelectbox"] [role="button"] *,div[data-testid="stSelectbox"] input,div[data-testid="stSelectbox"] span{{color:#111827 !important;font-size:14px !important;font-weight:600 !important;}}
+div[data-testid="stSelectbox"] [role="listbox"]{{background:#FFFFFF !important;border:1px solid #D1D5DB !important;border-radius:6px !important;box-shadow:0 4px 6px rgba(0,0,0,0.1) !important;}}
+div[data-testid="stSelectbox"] [role="option"],div[data-testid="stSelectbox"] [role="option"] *{{color:#111827 !important;font-size:14px !important;}}
+div[data-testid="stSelectbox"] [role="option"]:hover{{background:#F3F4F6 !important;}}
+div[data-testid="stSelectbox"] [role="option"][aria-selected="true"],div[data-testid="stSelectbox"] [role="option"][aria-selected="true"] *{{background:#0B74B0 !important;color:#FFFFFF !important;font-weight:600 !important;}}
+@media (max-width: 1199px) {{
+    .block-container{{padding:0.25rem 1.5rem 1.5rem 1.5rem !important;}}
+    .wim-day{{padding:12px 8px;}}
+    .wim-day-rain{{font-size:1rem;}}
+    .wim-metric{{padding:14px 16px;}}
+    .wim-metric-value{{font-size:1.25rem;}}
+}}
+@media (max-width: 767px) {{
+    .block-container{{padding:0.25rem 1rem 1rem 1rem !important;}}
+    .wim-nav{{padding:0 1rem 0 1rem;height:56px;}}
+    .wim-nav-spacer{{height:48px;}}
+    .wim-nav-title{{font-size:0.8rem;}}
+    .wim-nav-sub{{font-size:0.6rem;}}
+    .wim-site-name{{font-size:1.25rem;}}
+    .wim-site-coord{{font-size:0.7rem;}}
+    div[data-testid="stSelectbox"]{{max-width:160px !important;}}
+    .wim-day{{padding:10px 6px;border-radius:8px;}}
+    .wim-day-label{{font-size:0.6rem;}}
+    .wim-day-date{{font-size:0.65rem;}}
+    .wim-day-cond{{font-size:0.75rem;}}
+    .wim-day-rain{{font-size:0.95rem;}}
+    .wim-day-temp{{font-size:0.65rem;}}
+    .wim-day-flag{{font-size:0.6rem;padding:2px 6px;}}
+    .wim-metric{{padding:12px 14px;border-radius:8px;}}
+    .wim-metric-label{{font-size:0.6rem;}}
+    .wim-metric-value{{font-size:1.1rem;}}
+    .wim-section{{font-size:0.6rem;margin:6px 0 8px 0;}}
+    .stTabs [data-baseweb="tab"]{{font-size:0.75rem !important;padding:8px 12px !important;}}
+    .wim-table{{font-size:0.75rem;}}
+    .wim-table th,.wim-table td{{padding:8px 10px;}}
+}}
+@media (max-width: 575px) {{
+    .block-container{{padding:0.25rem 0.75rem 0.75rem 0.75rem !important;}}
+    .wim-nav{{padding:0 0.75rem 0 0.75rem;height:52px;}}
+    .wim-nav-spacer{{height:44px;}}
+    .wim-nav-sep{{height:24px;}}
+    .wim-nav-title{{font-size:0.75rem;}}
+    .wim-nav-sub{{font-size:0.55rem;}}
+    .wim-nav-left{{gap:12px;}}
+    .wim-site-row{{flex-direction:column;align-items:flex-start;gap:4px;margin:0 0 8px 0;}}
+    .wim-site-name{{font-size:1.1rem;}}
+    .wim-site-coord{{font-size:0.65rem;}}
+    div[data-testid="stSelectbox"]{{max-width:140px !important;}}
+    div[data-testid="stSelectbox"] [role="button"],div[data-testid="stSelectbox"] [role="button"] *{{font-size:13px !important;}}
+    [data-testid="stHorizontalBlock"]>.element-container{{flex:0 0 calc(50% - 6px) !important;min-width:calc(50% - 6px) !important;}}
+    .wim-day{{padding:10px 8px;margin-bottom:8px;}}
+    .wim-day-label{{font-size:0.55rem;}}
+    .wim-day-date{{font-size:0.6rem;}}
+    .wim-day-cond{{font-size:0.7rem;}}
+    .wim-day-rain{{font-size:0.9rem;}}
+    .wim-day-temp{{font-size:0.6rem;}}
+    .wim-metric{{padding:10px 12px;}}
+    .wim-metric-label{{font-size:0.55rem;}}
+    .wim-metric-value{{font-size:1rem;}}
+    .wim-section{{font-size:0.55rem;margin:4px 0 6px 0;padding-bottom:4px;}}
+    .wim-alert{{padding:12px 14px;font-size:0.8rem;}}
+    .wim-alert-label{{font-size:0.6rem;}}
+    .wim-table{{font-size:0.7rem;min-width:600px;}}
+    .wim-table th,.wim-table td{{padding:6px 8px;}}
+    .wim-accum{{padding:10px 8px;}}
+    .wim-accum-period{{font-size:0.55rem;}}
+    .wim-accum-val{{font-size:1.1rem;}}
+    .wim-accum-pop{{font-size:0.6rem;}}
+    .wim-accum-risk{{font-size:0.6rem;}}
+    div[style*="min-width:36px"]{{min-width:32px !important;}}
+    div[style*="font-size:0.65rem"]{{font-size:0.6rem !important;}}
+    @media (max-width: 375px) {{
+        .wim-nav-sub{{display:none;}}
+        .wim-site-coord{{display:none;}}
+    }}
+}}
+@media (max-width: 320px) {{
+    .block-container{{padding:0.25rem 0.5rem 0.5rem 0.5rem !important;}}
+    .wim-site-name{{font-size:1rem;}}
+    div[data-testid="stSelectbox"]{{max-width:120px !important;}}
+}}
+@media (max-width: 767px) and (orientation: landscape) {{
+    .wim-nav-spacer{{height:40px;}}
+    [data-testid="stHorizontalBlock"]>.element-container{{flex:0 0 calc(25% - 6px) !important;min-width:calc(25% - 6px) !important;}}
+}}
+@media print {{
+    .wim-nav{{position:relative;box-shadow:none;border-bottom:1px solid #ccc;}}
+    .wim-nav-spacer{{display:none;}}
+    .wim-day{{break-inside:avoid;}}
+    .wim-metric{{break-inside:avoid;}}
+}}
+</style>"""
+st.markdown(_CSS, unsafe_allow_html=True)
 
-st.markdown(f"<style>{_CSS}</style>", unsafe_allow_html=True)
-
+# CONFIGURATION
 ACCUWEATHER_KEY = st.secrets.get("ACCUWEATHER_KEY", os.getenv("ACCUWEATHER_KEY", ""))
 OPENWEATHER_KEY = st.secrets.get("OPENWEATHER_KEY", os.getenv("OPENWEATHER_KEY", ""))
 TOMORROWIO_KEY = st.secrets.get("TOMORROWIO_KEY", os.getenv("TOMORROWIO_KEY", ""))
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Adani@2026#Mine")
 SITES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mine_sites.json")
-DEFAULT_SITE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default_site.json")
 
 DEFAULT_SITES = [
-    {"id": "builtin-suliyari", "name": "Suliyari", "lat": 23.941626, "lon": 82.331934, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-dhirauli", "name": "Dhirauli", "lat": 23.936440, "lon": 82.358836, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-parsa", "name": "Parsa", "lat": 22.824950, "lon": 82.804340, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-talabira", "name": "Talabira", "lat": 21.756317, "lon": 83.970446, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-gare-pelma", "name": "Gare Pelma III", "lat": 22.105303, "lon": 83.292822, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-gp-ii", "name": "Gare Pelma II", "lat": 22.160838, "lon": 83.472457, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-pcb", "name": "PCB", "lat": 22.854601, "lon": 82.763414, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-pekb", "name": "PEKB", "lat": 22.823873, "lon": 82.805322, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-kurmitar", "name": "Kurmitar", "lat": 21.749766, "lon": 85.167471, "type": "Iron Ore Mine", "builtin": True},
-    {"id": "builtin-taldih", "name": "Taldih", "lat": 21.91056, "lon": 85.18014, "type": "Iron Ore Mine", "builtin": True},
+    {"id": "builtin-suliyari",   "name": "Suliyari",         "lat": 23.941626, "lon": 82.331934, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-dhirauli",   "name": "Dhirauli",        "lat": 23.936440, "lon": 82.358836, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-parsa",      "name": "Parsa",           "lat": 22.824950, "lon": 82.804340, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-talabira",   "name": "Talabira",       "lat": 21.756317, "lon": 83.970446, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-gare-pelma", "name": "Gare Pelma III",  "lat": 22.105303, "lon": 83.292822, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-gp-ii",      "name": "Gare Pelma II",   "lat": 22.160838, "lon": 83.472457, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-pcb",        "name": "PCB",             "lat": 22.854601, "lon": 82.763414, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-pekb",       "name": "PEKB",            "lat": 22.823873, "lon": 82.805322, "type": "Coal Open Cast Mine", "builtin": True},
+    {"id": "builtin-kurmitar",   "name": "Kurmitar",        "lat": 21.749766, "lon": 85.167471, "type": "Iron Ore Mine", "builtin": True},
+    {"id": "builtin-taldih",     "name": "Taldih",          "lat": 21.91056,  "lon": 85.18014,  "type": "Iron Ore Mine", "builtin": True},
     {"id": "builtin-gondbahera-ujheni", "name": "Gondbahera Ujheni", "lat": 24.175830, "lon": 82.369544, "type": "Underground Mine (Incline/Shaft — Greenfield)", "builtin": True},
-    {"id": "builtin-gondkhari", "name": "Gondkhari", "lat": 21.143326, "lon": 78.934850, "type": "Underground Mine (Incline/Shaft — Greenfield)", "builtin": True},
+    {"id": "builtin-gondkhari",  "name": "Gondkhari",       "lat": 21.143326, "lon": 78.934850, "type": "Underground Mine (Incline/Shaft — Greenfield)", "builtin": True},
 ]
-
-IST = pytz.timezone("Asia/Kolkata")
+IST = pytz.timezone('Asia/Kolkata')
 UTC = pytz.utc
 TIMEOUT = 20
 RETRY_MAX = 3
+
 WIND_CAUTION = 30
 WIND_STOP = 32
 VIS_CAUTION = 5.0
 VIS_STOP = 2.0
 RAIN_MOD = 1.5
 RAIN_HEAVY = 5.0
-API_WEIGHTS = {"accuweather": 0.40, "open_meteo": 0.25, "openweather": 0.20, "tomorrow_io": 0.10, "imd": 0.05}
 
+API_WEIGHTS = {
+    "accuweather": 0.40,
+    "open_meteo": 0.25,
+    "openweather": 0.20,
+    "tomorrow_io": 0.10,
+    "imd": 0.05
+}
+
+def load_sites():
+    custom = _load_sites_json()
+    result = list(DEFAULT_SITES)
+    builtin_names = {s["name"] for s in DEFAULT_SITES}
+    for s in custom:
+        if s.get("name") not in builtin_names:
+            result.append(s)
+    return result
 
 def _load_sites_json():
-    if not os.path.exists(SITES_FILE):
-        return []
+    if not os.path.exists(SITES_FILE): return []
     try:
         with open(SITES_FILE) as f:
             return json.load(f)
     except Exception:
         return []
 
-
-def load_sites():
-    custom = _load_sites_json()
-    result = list(DEFAULT_SITES)
-    builtins = {s["name"] for s in DEFAULT_SITES}
-    for s in custom:
-        if s.get("name") not in builtins:
-            result.append(s)
-    return result
-
-
 def save_site(name, lat, lon):
-    ex = [s for s in _load_sites_json() if s.get("name") != name]
-    ex.append({"name": name, "lat": lat, "lon": lon, "type": "Custom Site", "builtin": False})
+    ex = _load_sites_json()
+    ex = [s for s in ex if s["name"] != name]
+    ex.append({"name": name, "lat": lat, "lon": lon, "builtin": False})
     with open(SITES_FILE, "w") as f:
         json.dump(ex, f, indent=2)
-
 
 def update_site(old_name, new_name, lat, lon):
     ex = _load_sites_json()
     for s in ex:
-        if s.get("name") == old_name:
+        if s["name"] == old_name:
             s["name"] = new_name.strip()
             s["lat"] = lat
             s["lon"] = lon
     with open(SITES_FILE, "w") as f:
         json.dump(ex, f, indent=2)
 
-
 def delete_site(name):
-    ex = [s for s in _load_sites_json() if s.get("name") != name]
+    ex = _load_sites_json()
+    ex = [s for s in ex if s["name"] != name]
     with open(SITES_FILE, "w") as f:
         json.dump(ex, f, indent=2)
 
-
 def get_default_site():
+    _f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default_site.json")
     try:
-        if os.path.exists(DEFAULT_SITE_FILE):
-            with open(DEFAULT_SITE_FILE) as f:
+        if os.path.exists(_f):
+            with open(_f) as f:
                 return json.load(f).get("name")
     except Exception:
         pass
     return None
 
-
 def set_default_site(name):
-    with open(DEFAULT_SITE_FILE, "w") as f:
+    _f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default_site.json")
+    with open(_f, "w") as f:
         json.dump({"name": name}, f)
 
-
 ALL_SITES = load_sites()
-SITE_NAMES = [s["name"] for s in ALL_SITES]
+_names = [s["name"] for s in ALL_SITES]
 
 if "active_site" not in st.session_state:
-    d = get_default_site()
-    st.session_state.active_site = d if d in SITE_NAMES else (SITE_NAMES[0] if SITE_NAMES else None)
-
+    _def = get_default_site()
+    st.session_state.active_site = _def if (_def and _def in _names) else (_names[0] if _names else None)
 
 def now_ist():
     return datetime.now(IST)
-
 
 def utc_to_ist(dt):
     if dt.tzinfo is None:
         dt = UTC.localize(dt)
     return dt.astimezone(IST)
 
-
 def rain_badge_html(mm):
     if mm == 0:
-        return f"{mm} mm"
-    if mm < 0.3:
-        return f"{mm} mm · Drizzle"
-    if mm < 1.5:
-        return f"{mm} mm · Light"
-    if mm < 5.0:
-        return f"{mm} mm · Moderate"
-    return f"{mm} mm · Heavy"
-
+        return '<span class="wim-badge b-none">0 mm</span>'
+    elif mm < 0.3:
+        return f'<span class="wim-badge b-drizzle">{mm} mm · Drizzle</span>'
+    elif mm < 1.5:
+        return f'<span class="wim-badge b-light">{mm} mm · Light</span>'
+    elif mm < 5.0:
+        return f'<span class="wim-badge b-moderate">{mm} mm · Moderate</span>'
+    else:
+        return f'<span class="wim-badge b-heavy">{mm} mm · Heavy</span>'
 
 def mining_impact_html(mm, wind, vis, lightning):
     if lightning:
-        return "⚡ Stop — Lightning"
+        return '<span class="wim-badge b-lightning">⚡ Stop — Lightning</span>'
     if mm >= RAIN_HEAVY or vis <= VIS_STOP or wind >= WIND_STOP:
-        return "Stop Ops"
+        return '<span class="wim-badge b-stop">Stop Ops</span>'
     if mm >= RAIN_MOD or vis <= VIS_CAUTION or wind >= WIND_CAUTION:
-        return "Caution"
+        return '<span class="wim-badge b-caution">Caution</span>'
     if mm >= 0.3:
-        return "Monitor"
-    return "Clear"
-
+        return '<span class="wim-badge b-monitor">Monitor</span>'
+    return '<span class="wim-badge b-clear-ops">Clear</span>'
 
 def condition_str(total, descs, max_pop=0):
     if total < 0.5:
         return "Clear"
     rain_types = []
-    for desc in descs or []:
-        d = desc.lower()
-        if any(w in d for w in ["heavy", "torrential", "downpour", "storm", "thunderstorm"]):
-            rain_types.append("heavy")
-        elif any(w in d for w in ["moderate", "steady", "continuous"]):
-            rain_types.append("moderate")
-        elif any(w in d for w in ["light", "shower", "showers"]):
-            rain_types.append("light")
-        elif any(w in d for w in ["drizzle", "mist", "sprinkle"]):
-            rain_types.append("drizzle")
+    if descs and total >= 0.5:
+        for desc in descs:
+            desc_lower = desc.lower()
+            if any(word in desc_lower for word in ["heavy", "torrential", "downpour", "storm", "thunderstorm"]):
+                rain_types.append("heavy")
+            elif any(word in desc_lower for word in ["moderate", "steady", "continuous"]):
+                rain_types.append("moderate")
+            elif any(word in desc_lower for word in ["light", "light rain", "shower", "showers"]):
+                rain_types.append("light")
+            elif any(word in desc_lower for word in ["drizzle", "mist", "sprinkle"]):
+                rain_types.append("drizzle")
     api_rain_type = collections.Counter(rain_types).most_common(1)[0][0] if rain_types else None
     if total >= 15 and max_pop >= 25:
         return "Heavy Rain"
-    if total >= 15 and max_pop < 25:
+    elif total >= 15 and max_pop < 25:
         return "Moderate Rain"
-    if total >= 5 and max_pop >= 35:
+    elif total >= 5 and max_pop >= 35:
         return "Moderate Rain"
-    if total >= 5 and max_pop < 35:
+    elif total >= 5 and max_pop < 35:
         return "Light Rain"
-    if total >= 1.5 and max_pop >= 45:
+    elif total >= 1.5 and max_pop >= 45:
         return "Light Rain"
-    if total >= 1.5 and max_pop < 45:
+    elif total >= 1.5 and max_pop < 45:
         return "Drizzle"
-    if total >= 0.5:
+    elif total >= 0.5:
         return "Drizzle"
-    if api_rain_type == "heavy":
-        return "Heavy Rain"
-    if api_rain_type == "moderate":
-        return "Moderate Rain"
-    if api_rain_type == "light":
-        return "Light Rain"
-    if api_rain_type == "drizzle":
-        return "Drizzle"
+    if api_rain_type and total >= 0.5:
+        if api_rain_type == "heavy": return "Heavy Rain"
+        if api_rain_type == "moderate": return "Moderate Rain"
+        if api_rain_type == "light": return "Light Rain"
+        if api_rain_type == "drizzle": return "Drizzle"
     return "Clear"
-
 
 @st.cache_data(ttl=1800)
 def fetch_openweather(lat, lon):
-    if not OPENWEATHER_KEY:
-        return None, "no key"
+    if not OPENWEATHER_KEY: return None, "no key"
     try:
-        url = f"https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&units=metric&appid={OPENWEATHER_KEY}"
-        r = requests.get(url, timeout=TIMEOUT)
-        r.raise_for_status()
-        payload = r.json()
-        hourly = []
-        for item in payload.get("list", []):
-            main = item.get("main", {})
-            wind = item.get("wind", {})
-            weather = item.get("weather", [{}])[0]
-            rain = item.get("rain", {})
-            rain_3h = float(rain.get("3h", 0) or 0)
-            weather_id = int(weather.get("id", 0) or 0)
-            hourly.append(
-                {
-                    "dt": item.get("dt"),
-                    "temp": float(main.get("temp", 0) or 0),
-                    "rain": {"1h": rain_3h / 3.0},
-                    "pop": float(item.get("pop", 0) or 0),
-                    "wind_speed": float(wind.get("speed", 0) or 0),
-                    "visibility": float(item.get("visibility", 10000) or 10000),
-                    "weather": [{"id": weather_id, "description": weather.get("description", "")}],
-                    "humidity": float(main.get("humidity", 0) or 0),
-                }
-            )
-        if not hourly:
-            return None, "empty forecast response"
-        return {"hourly": hourly, "source": "OpenWeather 5-day / 3-hour forecast"}, None
-    except requests.HTTPError as exc:
-        return None, f"HTTP {getattr(exc.response, 'status_code', 'unknown')}: {exc}"
-    except requests.RequestException as exc:
-        return None, f"network error: {exc}"
-    except Exception as exc:
-        return None, str(exc)
-
+        r = requests.get(
+            f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}"
+            f"&units=metric&exclude=minutely,daily,alerts&appid={OPENWEATHER_KEY}", timeout=TIMEOUT)
+        r.raise_for_status(); data = r.json()
+        return data, None
+    except Exception as e:
+        return None, str(e)
 
 @st.cache_data(ttl=1800)
 def fetch_open_meteo(lat, lon, days=7):
@@ -330,74 +469,62 @@ def fetch_open_meteo(lat, lon, days=7):
             last_err = str(e)
     return None, f"Failed after {RETRY_MAX} attempts: {last_err}"
 
-
 @st.cache_data(ttl=1800)
 def fetch_tomorrow_io(lat, lon):
-    if not TOMORROWIO_KEY:
-        return None, "no key"
+    if not TOMORROWIO_KEY: return None, "no key"
     try:
         r = requests.get(
-            f"https://api.tomorrow.io/v4/weather/forecast?location={lat},{lon}&units=metric&apikey={TOMORROWIO_KEY}",
-            timeout=TIMEOUT,
-        )
-        r.raise_for_status()
-        return r.json(), None
+            f"https://api.tomorrow.io/v4/weather/forecast?location={lat},{lon}"
+            f"&units=metric&apikey={TOMORROWIO_KEY}", timeout=TIMEOUT)
+        r.raise_for_status(); return r.json(), None
     except Exception as e:
         return None, str(e)
-
 
 @st.cache_data(ttl=1800)
 def fetch_accuweather_hourly(lat, lon):
-    if not ACCUWEATHER_KEY:
-        return None, "no key"
+    if not ACCUWEATHER_KEY: return None, "no key"
     try:
         lr = requests.get(
-            f"https://dataservice.accuweather.com/locations/v1/cities/geoposition/search?q={lat},{lon}&apikey={ACCUWEATHER_KEY}",
-            timeout=TIMEOUT,
-        )
+            f"https://dataservice.accuweather.com/locations/v1/cities/geoposition/search"
+            f"?q={lat},{lon}&apikey={ACCUWEATHER_KEY}", timeout=TIMEOUT)
         lr.raise_for_status()
         key = lr.json().get("Key", "")
-        if not key:
-            return None, "no location key"
+        if not key: return None, "no location key"
         fr = requests.get(
-            f"https://dataservice.accuweather.com/forecasts/v1/hourly/12hour/{key}?apikey={ACCUWEATHER_KEY}&details=true&metric=true",
-            timeout=TIMEOUT,
-        )
-        fr.raise_for_status()
-        return fr.json(), None
+            f"https://dataservice.accuweather.com/forecasts/v1/hourly/12hour/{key}"
+            f"?apikey={ACCUWEATHER_KEY}&details=true&metric=true", timeout=TIMEOUT)
+        fr.raise_for_status(); return fr.json(), None
     except Exception as e:
         return None, str(e)
 
-
 @st.cache_data(ttl=900)
 def fetch_minutecast(lat, lon):
-    if not ACCUWEATHER_KEY:
-        return None, "no key"
+    if not ACCUWEATHER_KEY: return None, "no key"
     try:
         r = requests.get(
-            f"https://dataservice.accuweather.com/forecasts/v1/minute?q={lat},{lon}&apikey={ACCUWEATHER_KEY}&details=true",
-            timeout=TIMEOUT,
-        )
+            f"https://dataservice.accuweather.com/forecasts/v1/minute"
+            f"?q={lat},{lon}&apikey={ACCUWEATHER_KEY}&details=true", timeout=TIMEOUT)
         r.raise_for_status()
         out = []
         for m in r.json().get("Intervals", []):
             dbz = m.get("Dbz", 0)
             mmhr = ((10 ** (dbz / 10.0)) / 200.0) ** (1 / 1.6) if dbz > 0 else 0.0
-            out.append({"minute": m.get("StartMinute", 0), "mm_per_min": mmhr / 60.0, "is_precip": m.get("HasPrecipitation", False), "dbz": dbz})
+            out.append({"minute": m.get("StartMinute", 0), "mm_per_min": mmhr / 60.0,
+                        "is_precip": m.get("HasPrecipitation", False), "dbz": dbz})
         return (out if out else None), None
     except Exception as e:
         return None, str(e)
 
-
 @st.cache_data(ttl=1800)
 def fetch_imd(lat, lon):
     try:
-        r = requests.get(f"https://mausam.imd.gov.in/api/nowcast_district_api.php?lat={lat}&lon={lon}", timeout=TIMEOUT)
+        r = requests.get(
+            f"https://mausam.imd.gov.in/api/nowcast_district_api.php"
+            f"?lat={lat}&lon={lon}", timeout=TIMEOUT)
         r.raise_for_status()
         return r.json(), None
     except Exception as e:
         return None, str(e)
-
 
 def build_forecast(lat, lon, days=7):
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
@@ -433,22 +560,13 @@ def build_forecast(lat, lon, days=7):
         if hk < now_h - timedelta(hours=1) or hk > cutoff:
             return
         raw.setdefault(hk, {})
-        raw[hk][src] = {
-            "temp": float(temp or 0),
-            "rain": max(0.0, float(rain or 0)),
-            "pop": float(pop or 0),
-            "wind": float(wind or 0),
-            "vis": float(vis or 10),
-            "lightning": bool(lightning),
-            "desc": str(desc or ""),
-            "hum": float(hum or 0),
-            "cloud": float(cloud or 0),
-        }
+        raw[hk][src] = dict(temp=temp, rain=max(0.0, float(rain or 0)), pop=float(pop or 0), wind=float(wind or 0),
+                            vis=float(vis or 10), lightning=bool(lightning), desc=str(desc or ""), hum=float(hum or 0), cloud=float(cloud or 0))
 
     if imd:
         try:
             rain = imd.get("rainfall", 0) if isinstance(imd, dict) else 0
-            add(now_h, "imd", 0, rain, 80 if rain > 0 else 20, 0, 10.0, False, "IMD Nowcast", 0)
+            add(now_h, "imd", temp=0, rain=rain, pop=80 if rain > 0 else 20, wind=0, vis=10.0, lightning=False, desc="IMD Nowcast", hum=0)
         except Exception:
             pass
 
@@ -456,18 +574,9 @@ def build_forecast(lat, lon, days=7):
         for e in ow["hourly"]:
             hk = utc_to_ist(datetime.fromtimestamp(e["dt"], tz=UTC)).replace(minute=0, second=0, microsecond=0)
             wid = e["weather"][0]["id"] if e.get("weather") else 0
-            add(
-                hk,
-                "openweather",
-                e["temp"],
-                e.get("rain", {}).get("1h", 0),
-                e.get("pop", 0) * 100,
-                e["wind_speed"] * 3.6,
-                e.get("visibility", 10000) / 1000,
-                200 <= wid < 300,
-                e["weather"][0]["description"] if e.get("weather") else "",
-                e.get("humidity", 0),
-            )
+            add(hk, "openweather", e["temp"], e.get("rain", {}).get("1h", 0), e.get("pop", 0) * 100,
+                e["wind_speed"] * 3.6, e.get("visibility", 10000) / 1000,
+                200 <= wid < 300, e["weather"][0]["description"] if e.get("weather") else "", e.get("humidity", 0))
 
     if om and "hourly" in om:
         h = om["hourly"]
@@ -476,40 +585,21 @@ def build_forecast(lat, lon, days=7):
         cloud = h.get("cloudcover", [])
         for i, ts in enumerate(h["time"]):
             hk = datetime.fromisoformat(ts).replace(tzinfo=IST).replace(minute=0, second=0, microsecond=0)
-            add(
-                hk,
-                "open_meteo",
-                h["temperature_2m"][i],
-                h["precipitation"][i],
-                h["precipitation_probability"][i],
-                h["wind_speed_10m"][i],
-                vis[i] / 1000 if i < len(vis) and vis[i] is not None else 10,
-                False,
-                "",
-                hum[i] if i < len(hum) else 0,
-                cloud[i] if i < len(cloud) else 0,
-            )
+            add(hk, "open_meteo", h["temperature_2m"][i], h["precipitation"][i], h["precipitation_probability"][i],
+                h["wind_speed_10m"][i], vis[i] / 1000 if i < len(vis) and vis[i] is not None else 10,
+                False, "", hum[i] if i < len(hum) else 0, cloud[i] if i < len(cloud) else 0)
 
     if tm and "timelines" in tm and "hourly" in tm["timelines"]:
         for iv in tm["timelines"]["hourly"]:
             try:
-                dt_utc = UTC.localize(datetime.strptime(iv["time"], "%Y-%m-%dT%H:%M:%SZ"))
+                dt_utc = UTC.localize(datetime.strptime(iv["time"], '%Y-%m-%dT%H:%M:%SZ'))
             except Exception:
                 continue
             hk = utc_to_ist(dt_utc).replace(minute=0, second=0, microsecond=0)
             v = iv["values"]
-            add(
-                hk,
-                "tomorrow_io",
-                v.get("temperature", 0),
-                v.get("precipitationIntensity", 0),
-                v.get("precipitationProbability", 0),
-                v.get("windSpeed", 0) * 3.6,
-                v.get("visibility", 10000) / 1000 if v.get("visibility") not in [None, 10000] else 10,
-                v.get("lightningStrikeCount", 0) > 0 or v.get("weatherCode") == 8000,
-                "",
-                v.get("humidity", 0),
-            )
+            add(hk, "tomorrow_io", v.get("temperature", 0), v.get("precipitationIntensity", 0), v.get("precipitationProbability", 0),
+                v.get("windSpeed", 0) * 3.6, v.get("visibility", 10000) / 1000 if v.get("visibility") not in [None, 10000] else 10,
+                v.get("lightningStrikeCount", 0) > 0 or v.get("weatherCode") == 8000, "", v.get("humidity", 0))
 
     if aw:
         for e in aw:
@@ -520,18 +610,11 @@ def build_forecast(lat, lon, days=7):
                 hk = dt.astimezone(IST).replace(minute=0, second=0, microsecond=0)
             except Exception:
                 continue
-            add(
-                hk,
-                "accuweather",
-                e.get("Temperature", {}).get("Value", 0),
+            add(hk, "accuweather", e.get("Temperature", {}).get("Value", 0),
                 e.get("Rain", {}).get("Value", 0) + e.get("Snow", {}).get("Value", 0),
-                e.get("PrecipitationProbability", 0),
-                e.get("Wind", {}).get("Speed", {}).get("Value", 0),
-                e.get("Visibility", {}).get("Metric", {}).get("Value", 10.0),
-                e.get("ThunderstormProbability", 0) > 30,
-                e.get("IconPhrase", ""),
-                e.get("RelativeHumidity", 0),
-            )
+                e.get("PrecipitationProbability", 0), e.get("Wind", {}).get("Speed", {}).get("Value", 0),
+                e.get("Visibility", {}).get("Metric", {}).get("Value", 10.0), e.get("ThunderstormProbability", 0) > 30,
+                e.get("IconPhrase", ""), e.get("RelativeHumidity", 0))
 
     if mc:
         now_t = now_ist()
@@ -541,7 +624,7 @@ def build_forecast(lat, lon, days=7):
             mc_h[hk] += m["mm_per_min"]
         for hk, mm in mc_h.items():
             raw.setdefault(hk, {})
-            raw[hk]["minutecast"] = {"temp": 0, "rain": mm, "pop": 100 if mm > 0.05 else 0, "wind": 0, "vis": 10.0, "lightning": False, "desc": "", "hum": 0, "cloud": 0}
+            raw[hk]["minutecast"] = dict(temp=0, rain=mm, pop=100 if mm > 0.05 else 0, wind=0, vis=10.0, lightning=False, desc="", hum=0)
 
     final = []
     for hk in sorted(raw.keys()):
@@ -556,7 +639,9 @@ def build_forecast(lat, lon, days=7):
             return weighted_sum / total_weight
 
         def wavg_vis():
-            valid_vis = [(d["vis"], API_WEIGHTS.get(src, 0)) for src, d in srcs.items() if d["vis"] > 0]
+            current_hour = now_ist().hour
+            valid_vis = [(d["vis"], API_WEIGHTS.get(src, 0)) for src, d in srcs.items()
+                         if d["vis"] > 0 or (d["vis"] == 0 and 20 <= current_hour <= 6)]
             if not valid_vis:
                 return 10
             weighted_sum = sum(vis * weight for vis, weight in valid_vis)
@@ -564,18 +649,18 @@ def build_forecast(lat, lon, days=7):
             return weighted_sum / total_weight
 
         rain_vals = [d["rain"] for d in srcs.values()]
-        is_current_hour = hk == now_h
+        is_current_hour = (hk == now_h)
         has_imd_rain = "imd" in srcs and srcs["imd"]["rain"] > 0.1
         if is_current_hour and has_imd_rain:
             rain_out = max(rain_vals)
         elif len(rain_vals) >= 2:
-            rain_out = sorted(rain_vals)[len(rain_vals) // 2]
+            rain_out = sorted(rain_vals)[len(rain_vals)//2]
         elif len(rain_vals) == 1:
             rain_out = rain_vals[0]
         else:
             rain_out = 0.0
-
         pop_out = wavg("pop")
+
         descs = [d["desc"] for d in srcs.values() if d["desc"]]
         best_desc = ""
         if descs:
@@ -584,65 +669,52 @@ def build_forecast(lat, lon, days=7):
             else:
                 best_desc = collections.Counter(descs).most_common(1)[0][0]
 
-        final.append(
-            (
-                hk,
-                {
-                    "temp": round(wavg("temp"), 1),
-                    "rain_mm": round(rain_out, 2),
-                    "pop": round(pop_out, 1),
-                    "wind_kmh": round(wavg("wind"), 1),
-                    "vis_km": round(wavg_vis(), 1),
-                    "humidity": round(wavg("hum"), 1),
-                    "cloud": round(wavg("cloud"), 0),
-                    "lightning": any(d["lightning"] for d in srcs.values()),
-                    "desc": best_desc,
-                    "n_sources": len(srcs),
-                },
-            )
-        )
+        final.append((hk, {
+            "temp": round(wavg("temp"), 1), "rain_mm": round(rain_out, 2),
+            "pop": round(pop_out, 1), "wind_kmh": round(wavg("wind"), 1),
+            "vis_km": round(wavg_vis(), 1), "humidity": round(wavg("hum"), 1),
+            "cloud": round(wavg("cloud"), 0),
+            "lightning": any(d["lightning"] for d in srcs.values()),
+            "desc": best_desc, "n_sources": len(srcs)}))
 
     by_day = collections.defaultdict(list)
     for hk, d in final:
         by_day[hk.date()].append((hk, d))
-
     for date_key in by_day:
         seen = set()
-        dedup = []
+        deduplicated = []
         for hk, d in by_day[date_key]:
             if hk not in seen:
                 seen.add(hk)
-                dedup.append((hk, d))
-        by_day[date_key] = dedup
+                deduplicated.append((hk, d))
+        by_day[date_key] = deduplicated
 
     return dict(by_day), mc, src_status
-
 
 def generate_fixed_slabs():
     slabs = []
     for i in range(12):
-        sh = i * 2
-        eh = (i + 1) * 2
-        slabel = f"{sh % 12 or 12}:00 {'AM' if sh < 12 else 'PM'}"
-        elabel = f"{eh % 12 or 12}:00 {'AM' if eh < 12 else 'PM'}"
-        if eh >= 24:
-            eh = 0
-            elabel = "12:00 AM (next day)"
-        slabs.append((sh, eh, f"{slabel} – {elabel}", 0))
+        s_hour = i * 2
+        e_hour = (i + 1) * 2
+        s_label = f"{s_hour % 12 or 12}:00 {'AM' if s_hour < 12 else 'PM'}"
+        e_label = f"{e_hour % 12 or 12}:00 {'AM' if e_hour < 12 else 'PM'}"
+        if e_hour >= 24:
+            e_hour = 0
+            e_label = "12:00 AM (next day)"
+        full_label = f"{s_label} – {e_label}"
+        slabs.append((s_hour, e_hour, full_label, 0))
     return slabs
-
 
 def hour_to_slab(h, slabs):
     for s, e, n, m in slabs:
         if s <= h < e or (s > e and (h >= s or h < e)):
-            return s, e, n, m
+            return (s, e, n, m)
     return None
-
 
 def build_slabs(hourly, is_today=False):
     slabs = generate_fixed_slabs()
     current_hour = now_ist().hour
-    raw = collections.defaultdict(lambda: {"rain": 0, "pop": [], "temp": [], "wind": [], "vis": [], "lightning": [], "hum": [], "cloud": [], "count": 0})
+    raw = collections.defaultdict(lambda: dict(rain=0, pop=[], wind=[], vis=[], lightning=[], hum=[], count=0))
     for hk, d in hourly:
         sk = hour_to_slab(hk.hour, slabs)
         if not sk:
@@ -658,12 +730,10 @@ def build_slabs(hourly, is_today=False):
         r = raw[sk]
         r["rain"] += d["rain_mm"]
         r["pop"].append(d["pop"])
-        r["temp"].append(d["temp"])
         r["wind"].append(d["wind_kmh"])
         r["vis"].append(d["vis_km"])
         r["lightning"].append(d["lightning"])
         r["hum"].append(d["humidity"])
-        r["cloud"].append(d.get("cloud", 0))
         r["count"] += 1
     slabs_out = []
     for sk, r in raw.items():
@@ -672,27 +742,16 @@ def build_slabs(hourly, is_today=False):
         avg = lambda lst: sum(lst) / len(lst) if lst else 0
         pops = r["pop"]
         pop_val = int(sorted(pops)[int(len(pops) * 0.75)] if pops else 0)
-        slabs_out.append(
-            {
-                "label": sk[2],
-                "sort": sk[0],
-                "mm": round(r["rain"], 1),
-                "pop": pop_val,
-                "temp": round(avg(r["temp"]), 1),
-                "hum": round(avg(r["hum"]), 1),
-                "cloud": round(avg(r["cloud"]), 0),
-                "wind": round(avg(r["wind"]), 1),
-                "vis": round(avg(r["vis"]), 1),
-                "lightning": any(r["lightning"]),
-            }
-        )
+        slabs_out.append(dict(label=sk[2], sort=sk[0], mm=round(r["rain"], 1),
+                              pop=pop_val, wind=round(avg(r["wind"]), 1),
+                              vis=round(avg(r["vis"]), 1), hum=round(avg(r["hum"]), 1),
+                              lightning=any(r["lightning"])))
     slabs_out.sort(key=lambda x: x["sort"])
     return slabs_out
 
-
 def day_summary(hourly, mine_type="Coal Open Cast Mine", target_day=None):
     if not hourly:
-        return {"max_temp": "—", "min_temp": "—", "total_rain": 0, "max_pop": 0, "condition": "—", "humidity": 0, "slabs": [], "avg_wind": 0, "min_vis": 10}
+        return dict(max_temp="—", min_temp="—", total_rain=0, max_pop=0, condition="—", humidity=0, slabs=[], avg_wind=0, min_vis=10)
     today = now_ist().date()
     is_today = (target_day == today) if target_day else False
     temps = [d["temp"] for _, d in hourly]
@@ -705,31 +764,27 @@ def day_summary(hourly, mine_type="Coal Open Cast Mine", target_day=None):
     total = round(sum(rains), 1)
     descs = [d["desc"] for _, d in hourly if d["desc"]]
     max_pop_val = int(round(sorted(pops)[int(len(pops) * 0.75)] if pops else 0, 0))
-    return {
-        "max_temp": round(max(temps), 1) if temps else "—",
-        "min_temp": round(min(temps), 1) if temps else "—",
-        "total_rain": total,
-        "max_pop": max_pop_val,
-        "condition": condition_str(total, descs, max_pop_val),
-        "humidity": round(sum(hums) / len(hums), 1) if hums else 0,
-        "cloud": round(sum(clouds) / len(clouds), 0) if clouds else None,
-        "avg_wind": round(sum(winds) / len(winds), 1) if winds else 0,
-        "min_vis": round(min(viss), 1) if viss else 10,
-        "slabs": build_slabs(hourly, is_today=is_today),
-    }
-
+    return dict(
+        max_temp=round(max(temps), 1) if temps else "—",
+        min_temp=round(min(temps), 1) if temps else "—",
+        total_rain=total,
+        max_pop=max_pop_val,
+        condition=condition_str(total, descs, max_pop_val),
+        humidity=round(sum(hums) / len(hums), 1) if hums else 0,
+        cloud=round(sum(clouds) / len(clouds), 0) if clouds else None,
+        avg_wind=round(sum(winds) / len(winds), 1) if winds else 0,
+        min_vis=round(min(viss), 1) if viss else 10,
+        slabs=build_slabs(hourly, is_today=is_today))
 
 def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
-    rain = ds["total_rain"]
-    mwind = ds.get("max_wind", ds.get("avg_wind", 0))
-    mvis = ds["min_vis"]
-    pop = ds["max_pop"]
+    rain = ds["total_rain"]; mwind = ds.get("max_wind", ds.get("avg_wind", 0))
+    mvis = ds["min_vis"]; pop = ds["max_pop"]
     has_l = any(s["lightning"] for s in slabs)
     rain_sl = [s for s in slabs if s["mm"] > 0]
     heavy_sl = [s for s in slabs if s["mm"] >= RAIN_HEAVY]
     mod_sl = [s for s in slabs if RAIN_MOD <= s["mm"] < RAIN_HEAVY]
     today = now_ist().date()
-    dlabel = "Today" if target_day == today else target_day.strftime("A")
+    dlabel = "Today" if target_day == today else target_day.strftime("%A")
     parts = []
     if "Iron Ore" in mine_type:
         WIND_CAUTION_MINE = 25
@@ -747,31 +802,27 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
     elif rain == 0 and pop >= 25:
         parts.append(f"{dlabel} is likely dry with a {pop}% chance of isolated showers. Schedule blasting in morning hours and monitor sky conditions before afternoon shift.")
     elif heavy_sl:
-        hw = heavy_sl[0]["label"]
-        hp = heavy_sl[0]["pop"]
-        parts.append(f"Heavy rainfall totaling {rain} mm is expected {dlabel.lower()}, peaking around {hw} ({hp}% probability).")
+        hw = heavy_sl[0]["label"]; hp = heavy_sl[0]["pop"]
+        parts.append(f"Heavy rainfall totaling {rain} mm is expected {dlabel.lower()}, peaking around {hw} ({hp}% probability).<br>")
         if pop < 50:
             parts.append(f"Despite moderate probability ({pop}%), rainfall intensity is high. Prepare drainage but consider proceeding with morning operations before {hw.split('–')[0].strip()}.")
         if "Coal" in mine_type:
-            parts.append("Pit drainage must be inspected before morning shift. Bench and haul road surfaces will be severely impacted; mandatory post-rain ground assessment required before resuming OB removal, excavator, and dozer work. Deploy coal stockpile covers.")
+            parts.append("Pit drainage must be inspected before morning shift. Bench and haul road surfaces will be severely impacted — mandatory post-rain ground assessment required before resuming OB removal, excavator, and dozer work. Deploy coal stockpile covers.")
         elif "Underground" in mine_type:
             parts.append("Incline mouth and shaft collar drainage must be inspected before morning shift. Verify dewatering pump capacity and berm integrity before resuming drilling, blasting, or hoisting operations.")
         else:
-            parts.append("Pit drainage must be inspected before morning shift. Bench and haul road surfaces will be severely impacted; mandatory post-rain ground assessment required before resuming OB removal, excavator, and dozer work. Deploy ore stockpile covers.")
+            parts.append("Pit drainage must be inspected before morning shift. Bench and haul road surfaces will be severely impacted — mandatory post-rain ground assessment required before resuming OB removal, excavator, and dozer work. Deploy ore stockpile covers.")
     elif mod_sl:
-        first = rain_sl[0]["label"]
-        last = rain_sl[-1]["label"]
-        fp = rain_sl[0]["pop"]
-        lp = rain_sl[-1]["pop"]
-        first_start = first.split("–")[0].strip() if "–" in first else first.split("-")[0].strip()
-        last_end = last.split("–")[1].strip() if "–" in last else last.split("-")[1].strip()
+        first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]; fp = rain_sl[0]["pop"]; lp = rain_sl[-1]["pop"]
+        first_start = first.split('–')[0].strip() if '–' in first else first.split('-')[0].strip()
+        last_end = last.split('–')[1].strip() if '–' in last else last.split('-')[1].strip()
         time_range = f"{first_start} – {last_end}"
         if pop >= 15:
-            parts.append(f"Moderate rainfall of {rain} mm is forecast from {time_range} with probability ranging {fp}–{lp}%.")
+            parts.append(f"Moderate rainfall of {rain} mm is forecast from {time_range} with probability ranging {fp}–{lp}%.<br>")
         else:
-            parts.append(f"Moderate rainfall of {rain} mm is forecast from {time_range}.")
+            parts.append(f"Moderate rainfall of {rain} mm is forecast from {time_range}.<br>")
         if pop < 15:
-            parts.append("Intermittent showers expected. Surface impact minimal; operations can continue with standard wet-weather protocols.")
+            parts.append("Intermittent showers expected. Surface impact minimal — operations can continue with standard wet-weather protocols.")
         elif pop < 40:
             parts.append(f"Lower probability ({pop}%) suggests showers may be scattered. Prioritize operations in drier morning window. Keep rain gear and drainage pumps on standby.")
         elif pop > 70:
@@ -783,35 +834,32 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
         else:
             parts.append("Plan ore loading and dispatch in the pre-rain dry window. Allow 1–2 hours post-rain drainage assessment before resuming heavy equipment on active benches. Check blast hole integrity before charging.")
     elif rain_sl and pop >= 15:
-        first = rain_sl[0]["label"]
-        last = rain_sl[-1]["label"]
-        fp = rain_sl[0]["pop"]
-        first_start = first.split("–")[0].strip() if "–" in first else first.split("-")[0].strip()
-        last_end = last.split("–")[1].strip() if "–" in last else last.split("-")[1].strip()
+        first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]; fp = rain_sl[0]["pop"]
+        first_start = first.split('–')[0].strip() if '–' in first else first.split('-')[0].strip()
+        last_end = last.split('–')[1].strip() if '–' in last else last.split('-')[1].strip()
         time_range = f"{first_start} – {last_end}"
-        parts.append(f"Light rainfall of {rain} mm is expected {time_range} ({fp}% probability).")
+        parts.append(f"Light rainfall of {rain} mm is expected {time_range} ({fp}% probability).<br>")
         if pop < 35:
-            parts.append(f"Low probability ({pop}%) indicates intermittent drizzle. Surface impact minimal; operations can continue with standard wet-weather protocols.")
+            parts.append(f"Low probability ({pop}%) indicates intermittent drizzle. Surface impact minimal — operations can continue with standard wet-weather protocols.")
         elif pop > 60:
-            parts.append(f"Moderate-to-high probability ({pop}%) suggests sustained light rain. Expect haul road surface degradation; deploy grader for maintenance.")
+            parts.append(f"Moderate-to-high probability ({pop}%) suggests sustained light rain. Expect haul road surface degradation — deploy grader for maintenance.")
         else:
             parts.append("Operational impact is minimal. Inspect blast area for surface water before charging holes.")
     elif rain >= 0.5 and pop < 15:
         if rain_sl:
-            first = rain_sl[0]["label"]
-            last = rain_sl[-1]["label"]
-            first_start = first.split("–")[0].strip() if "–" in first else first.split("-")[0].strip()
-            last_end = last.split("–")[1].strip() if "–" in last else last.split("-")[1].strip()
+            first = rain_sl[0]["label"]; last = rain_sl[-1]["label"]
+            first_start = first.split('–')[0].strip() if '–' in first else first.split('-')[0].strip()
+            last_end = last.split('–')[1].strip() if '–' in last else last.split('-')[1].strip()
             time_range = f"{first_start} – {last_end}"
-            parts.append(f"Light rainfall of {rain} mm is forecast {time_range}.")
+            parts.append(f"Light rainfall of {rain} mm is forecast {time_range}.<br>")
         else:
-            parts.append(f"Light rainfall of {rain} mm is forecast {dlabel.lower()}.")
+            parts.append(f"Light rainfall of {rain} mm is forecast {dlabel.lower()}.<br>")
         parts.append(f"Low probability ({pop}%) of {rain} mm precipitation. Standard operations with minimal rain gear standby recommended.")
     elif rain > 0 and rain < 0.5 and pop > 0 and pop < 15:
-        parts.append(f"Trace precipitation ({rain} mm) may occur {dlabel.lower()} with only {pop}% probability. It may rain briefly or may remain completely dry.")
+        parts.append(f"Trace precipitation ({rain} mm) may occur {dlabel.lower()} with only {pop}% probability. It may rain briefly or may remain completely dry.<br>")
         parts.append("Operational impact is expected to be negligible. Standard operations may proceed, with minimal rain gear standby as precaution.")
     elif pop >= 15 and not rain_sl:
-        parts.append(f"{dlabel} is expected to remain largely dry, though there is a {pop}% chance of brief, isolated drizzle that may not register on gauges.")
+        parts.append(f"{dlabel} is expected to remain largely dry, though there is a {pop}% chance of brief, isolated drizzle that may not register on gauges.<br>")
         parts.append("No operational impact anticipated. Proceed with standard protocols but monitor sky conditions.")
     if has_l:
         lt = [s["label"] for s in slabs if s["lightning"]]
@@ -827,7 +875,7 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
         if "Coal" in mine_type:
             parts.append(f"Wind speeds up to {mwind} km/h will increase coal dust dispersal. Activate dust suppression and verify flyrock zones before each blast.")
         elif "Underground" in mine_type:
-            parts.append(f"Wind speeds up to {mwind} km/h will increase hoisting time and restrict crane slewing near the shaft collar.")
+            parts.append(f"Wind speeds up to {mwind} km/h — reduce hoisting speed and restrict crane slewing near the shaft collar.")
         else:
             parts.append(f"Wind speeds up to {mwind} km/h will increase ore dust dispersal. Activate dust suppression and verify flyrock zones before each blast.")
     if mvis <= VIS_STOP and mvis > 0:
@@ -835,7 +883,6 @@ def smart_rec(ds, slabs, target_day, mine_type="Coal Open Cast Mine"):
     elif mvis <= VIS_CAUTION and mvis > 0:
         parts.append(f"Reduced visibility of {mvis} km expected. Enforce lower truck speeds on haul roads and deploy additional spotters on active benches.")
     return " ".join(parts) if parts else f"{dlabel} presents no significant weather concerns. All planned operations may proceed as scheduled."
-
 
 def rain_accum(hourly, target_day=None):
     ist_now = now_ist()
@@ -849,10 +896,9 @@ def rain_accum(hourly, target_day=None):
         seg = [(dt, d) for dt, d in hourly if anchor <= dt < anchor + timedelta(hours=h)]
         mm = round(sum(d["rain_mm"] for _, d in seg), 1)
         pops = [d["pop"] for _, d in seg if d["pop"] > 0]
-        pop = int(sorted(pops)[int(len(pops) * 0.75)] if pops else 0)
+        pop = int(sorted(pops)[int(len(pops)*0.75)] if pops else 0)
         out[h] = (mm, pop)
     return out
-
 
 def rain_intensity_trend(slabs, min_pop_threshold=40):
     rain_slabs = [s for s in slabs if s["mm"] >= 2.0 and s["pop"] >= min_pop_threshold]
@@ -871,15 +917,15 @@ def rain_intensity_trend(slabs, min_pop_threshold=40):
         return f"Precipitation increasing throughout the day — peak intensity expected around {last_label.split('–')[0].strip()} ({last_mm:.1f} mm, {last_pop}% probability). Consider completing critical operations earlier."
     elif first_mm > last_mm * 2.0 and first_pop >= min_pop_threshold:
         return f"Precipitation decreasing throughout the day — conditions improving after {first_label.split('–')[0].strip()}. Operations may resume standard protocols once rainfall subsides."
-    return None
-
+    else:
+        return None
 
 def operational_window_optimizer(slabs, min_vis=5.0, max_wind=30, max_rain=1.0):
     safe_windows = []
     current_start = None
     current_duration = 0
     for s in slabs:
-        is_safe = s["vis"] >= min_vis and s["wind"] <= max_wind and s["mm"] <= max_rain and not s["lightning"]
+        is_safe = (s["vis"] >= min_vis and s["wind"] <= max_wind and s["mm"] <= max_rain and not s["lightning"])
         if is_safe:
             if current_start is None:
                 current_start = s["label"]
@@ -897,7 +943,6 @@ def operational_window_optimizer(slabs, min_vis=5.0, max_wind=30, max_rain=1.0):
         return "No continuous 4-hour safe windows identified. Consider shorter work cycles or deferring operations until conditions improve."
     best = safe_windows[0]
     return f"Optimal operational window: {best[0]} ({best[1]} hours continuous). Schedule precision activities (blasting, heavy lifts) during this period."
-
 
 def equipment_specific_advisories(slabs, hourly=None, mine_type="Coal Open Cast Mine"):
     advisories = []
@@ -928,7 +973,6 @@ def equipment_specific_advisories(slabs, hourly=None, mine_type="Coal Open Cast 
     elif max_rain >= 5:
         advisories.append("BLASTING: Rain protocol — check hole water levels. Use water-resistant explosives. Post-rain: 2-hour ground assessment.")
     return advisories if advisories else ["All equipment can operate under standard protocols."]
-
 
 def underground_advisories(slabs, hourly=None, mine_type="Underground Mine (Incline/Shaft — Greenfield)"):
     advisories = []
@@ -962,7 +1006,6 @@ def underground_advisories(slabs, hourly=None, mine_type="Underground Mine (Incl
         advisories.append("SHAFT — SURFACE OPS: Visibility STOP at shaft top — suspend material lowering/hoisting; deploy signalers with radio contact.")
     return advisories if advisories else ["Incline and shaft development work can proceed under standard protocols — no significant weather constraints identified."]
 
-
 def dust_risk_index(slabs, hourly):
     if not slabs:
         return None
@@ -976,7 +1019,6 @@ def dust_risk_index(slabs, hourly):
     elif total_rain >= 5 or avg_hum > 70:
         return f"LOW DUST RISK: Precipitation and humidity suppressing dust. Standard protocols sufficient."
     return None
-
 
 def fog_dew_prediction(hourly, target_day):
     today = now_ist().date()
@@ -993,7 +1035,6 @@ def fog_dew_prediction(hourly, target_day):
         return f"HEAVY DEW: Moderate fog or dew expected. Wet benches will reduce traction. Delay drilling until visibility improves."
     return None
 
-
 def soil_moisture_forecast(slabs, past_rain_24h=0):
     total_rain = sum(s["mm"] for s in slabs)
     cumulative = past_rain_24h + total_rain
@@ -1004,7 +1045,6 @@ def soil_moisture_forecast(slabs, past_rain_24h=0):
     elif cumulative >= 5:
         return f"DAMP GROUND: {cumulative:.1f}mm total moisture. Surface firm but monitor for soft spots. Standard precautions apply."
     return None
-
 
 def worker_safety_index(hourly, slabs):
     temps = [d["temp"] for _, d in hourly]
@@ -1022,151 +1062,171 @@ def worker_safety_index(hourly, slabs):
         return f"DANGEROUS HEAT INDEX: Apparent temperature {heat_index:.1f}°C. Suspend non-essential outdoor work during peak heat hours."
     return None
 
-
 def render_mc(mc):
     if not mc:
         return
-    now = now_ist()
-    max_dbz = max((m["dbz"] for m in mc), default=1) or 1
+    now = now_ist(); max_dbz = max((m["dbz"] for m in mc), default=1) or 1
     bars = ""
     for m in mc:
         dbz = m["dbz"]
         t = (now + timedelta(minutes=m["minute"])).strftime("%H:%M")
-        c = (
-            "#F1F5F9"
-            if dbz == 0 or not m["is_precip"]
-            else "#BFDBFE"
-            if dbz < 15
-            else "#3B82F6"
-            if dbz < 25
-            else "#1D4ED8"
-            if dbz < 35
-            else "#D97706"
-            if dbz < 45
-            else "#DC2626"
-        )
+        c = ("#F1F5F9" if dbz == 0 or not m["is_precip"] else "#BFDBFE" if dbz < 15 else "#3B82F6" if dbz < 25 else "#1D4ED8" if dbz < 35 else "#D97706" if dbz < 45 else "#DC2626")
         ht = max(4, int(28 * dbz / max_dbz))
-        bars += f'<div style="display:inline-block;width:4px;height:{ht}px;background:{c};border-radius:1px;margin-right:1px;vertical-align:bottom" title="{t} - {dbz} dBZ"></div>'
+        bars += f'<span style="display:inline-block;width:4px;height:{ht}px;background:{c};border-radius:1px;margin-right:1px;vertical-align:bottom;" title="{t}"></span>'
     lbls = ""
     for m in mc:
         if m["minute"] % 30 == 0:
             t = (now + timedelta(minutes=m["minute"])).strftime("%H:%M")
-            lbls += f'<span style="display:inline-block;width:120px;font-size:0.65rem;color:#94A3B8">{t}</span>'
-    st.markdown(
-        f'<div class="wim-mc"><div class="wim-mc-title">Minute-by-Minute Precipitation — Next 2 Hours AccuWeather Radar</div><div style="white-space:nowrap;display:flex;align-items:flex-end;gap:0;">{bars}</div><div style="white-space:nowrap;margin-top:6px;">{lbls}</div></div>',
-        unsafe_allow_html=True,
-    )
+            lbls += f'<span style="display:inline-block;width:120px;font-size:0.65rem;color:#94A3B8;">{t}</span>'
+    st.markdown(f"""<div class="wim-mc">
+        <div class="wim-mc-title">Minute-by-Minute Precipitation — Next 2 Hours (AccuWeather Radar)</div>
+        <div style="white-space:nowrap;display:flex;align-items:flex-end;gap:0;">{bars}</div>
+        <div style="white-space:nowrap;margin-top:6px;">{lbls}</div>
+        <div style="margin-top:8px;font-size:0.65rem;color:#94A3B8;display:flex;gap:12px;flex-wrap:wrap;">
+            <span><span style="display:inline-block;width:8px;height:8px;background:#BFDBFE;border-radius:1px;margin-right:3px;vertical-align:middle;"></span>Light</span>
+            <span><span style="display:inline-block;width:8px;height:8px;background:#3B82F6;border-radius:1px;margin-right:3px;vertical-align:middle;"></span>Moderate</span>
+            <span><span style="display:inline-block;width:8px;height:8px;background:#1D4ED8;border-radius:1px;margin-right:3px;vertical-align:middle;"></span>Heavy</span>
+            <span><span style="display:inline-block;width:8px;height:8px;background:#DC2626;border-radius:1px;margin-right:3px;vertical-align:middle;"></span>Very Heavy</span>
+        </div></div>""", unsafe_allow_html=True)
 
-
-def render_hourly_table(hourly, target_day):
+def render_hourly_graph(hourly, target_day):
     if not hourly:
-        st.markdown('<div class="wim-alert wim-alert-none">No hourly data available.</div>', unsafe_allow_html=True)
         return
     today = now_ist().date()
-    istnowh = now_ist().replace(minute=0, second=0, microsecond=0)
-    rows = []
-    seenhours = set()
+    ist_now_h = now_ist().replace(minute=0, second=0, microsecond=0)
+    data = []
+    seen_hours = set()
     for hk, d in sorted(hourly, key=lambda x: x[0]):
-        hkey = hk.strftime("%Y-%m-%d %H:00")
-        if hkey in seenhours:
+        h_key = hk.strftime("%Y-%m-%d %H:00")
+        if h_key in seen_hours:
             continue
-        seenhours.add(hkey)
-        if target_day == today and hk < istnowh:
+        seen_hours.add(h_key)
+        if target_day == today and hk < ist_now_h:
             continue
         mm = d["rain_mm"]
         wind = d["wind_kmh"]
         vis = d["vis_km"]
-        pop = d["pop"]
         temp = d["temp"]
-        hum = d["humidity"]
+        pop = d["pop"]
         light = d["lightning"]
-        cloud = d.get("cloud", 0)
-        hlbl = hk.strftime("%I:%M %p")
         if light or mm >= RAIN_HEAVY or vis <= VIS_STOP or wind >= WIND_STOP:
-            rowcls = "hour-row-alert"
+            status = "stop"; status_color = "#DC2626"; status_bg = "#FFF1F2"
         elif mm >= RAIN_MOD or vis <= VIS_CAUTION or wind >= WIND_CAUTION:
-            rowcls = "hour-row-heavy"
-        elif mm > 0:
-            rowcls = "hour-row-rain"
+            status = "caution"; status_color = "#D97706"; status_bg = "#FFF7ED"
         else:
-            rowcls = ""
-        impact = mining_impact_html(mm, wind, vis, light)
-        rows.append(
-            f'<tr class="{rowcls}"><td style="font-weight:600;color:#334155;white-space:nowrap">{hlbl}</td><td>{rain_badge_html(mm)}</td><td>{pop:.0f}%</td><td>{temp}°C</td><td>{hum}%</td><td>{int(cloud)}%</td><td>{wind} km/h</td><td>{vis} km</td><td>{"Alert" if light else ""}</td><td>{impact}</td></tr>'
-        )
-    st.markdown(
-        '<div style="overflow-x:auto"><table class="wim-table"><thead><tr><th>Hour</th><th>Rainfall</th><th>Rain Prob.</th><th>Temp</th><th>Humidity</th><th>Cloud</th><th>Wind</th><th>Visibility</th><th>Lightning</th><th>Mining Impact</th></tr></thead><tbody>' + "".join(rows) + "</tbody></table></div>",
-        unsafe_allow_html=True,
-    )
+            status = "safe"; status_color = "#16A34A"; status_bg = "#F0FDF4"
+        data.append({"hour": hk.strftime("%H:%M"), "hour_12": hk.strftime("%I %p").lstrip("0"), "temp": temp, "rain": mm, "pop": pop,
+                     "status": status, "status_color": status_color, "status_bg": status_bg, "wind": wind, "vis": vis})
+    if not data:
+        return
+    max_rain = max(d["rain"] for d in data) or 1
+    max_temp = max(d["temp"] for d in data)
+    min_temp = min(d["temp"] for d in data)
+    temp_range = max_temp - min_temp or 1
+    bars = ""
+    for d in data:
+        rain_height = min((d["rain"] / max_rain) * 60, 60) if max_rain > 0 else 0
+        temp_height = ((d["temp"] - min_temp) / temp_range) * 40 if temp_range > 0 else 20
+        status_dot = '<div style="width:8px;height:8px;border-radius:50%;background:' + d["status_color"] + ';margin:4px auto;"></div>'
+        hour_label = d["hour_12"].replace(" ","")
+        bars += '<div style="flex:1;min-width:36px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 2px;border-radius:6px;background:' + d["status_bg"] + ';margin:0 2px;position:relative;" title="' + d["hour"] + ' - Temp: ' + str(d["temp"]) + '°C, Rain: ' + str(d["rain"]) + 'mm, Status: ' + d["status"].upper() + '">' + \
+            '<div style="font-size:0.65rem;font-weight:600;color:#64748B;">' + hour_label + '</div>' + \
+            '<div style="display:flex;align-items:flex-end;gap:2px;height:70px;">' + \
+                '<div style="width:14px;background:linear-gradient(180deg,#0B74B0,#60A5FA);border-radius:3px 3px 0 0;height:' + str(rain_height) + 'px;min-height:2px;"></div>' + \
+                '<div style="width:14px;background:linear-gradient(180deg,#F59E0B,#FCD34D);border-radius:3px 3px 0 0;height:' + str(temp_height) + 'px;min-height:2px;"></div>' + \
+            '</div>' + \
+            status_dot + \
+            '<div style="font-size:0.6rem;font-weight:700;color:' + d["status_color"] + ';text-transform:uppercase;">' + d["status"][:1] + '</div>' + \
+        '</div>'
+    legend = '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:16px;padding-top:12px;border-top:1px solid #E2E8F0;">' + \
+        '<div style="display:flex;align-items:center;gap:6px;"><div style="width:14px;height:14px;background:linear-gradient(180deg,#0B74B0,#60A5FA);border-radius:3px;"></div><span style="font-size:0.75rem;color:#475569;">Precipitation (mm)</span></div>' + \
+        '<div style="display:flex;align-items:center;gap:6px;"><div style="width:14px;height:14px;background:linear-gradient(180deg,#F59E0B,#FCD34D);border-radius:3px;"></div><span style="font-size:0.75rem;color:#475569;">Temperature (°C)</span></div>' + \
+        '<div style="display:flex;align-items:center;gap:6px;"><div style="width:8px;height:8px;border-radius:50%;background:#16A34A;"></div><span style="font-size:0.75rem;color:#475569;">Safe Operations</span></div>' + \
+        '<div style="display:flex;align-items:center;gap:6px;"><div style="width:8px;height:8px;border-radius:50%;background:#D97706;"></div><span style="font-size:0.75rem;color:#475569;">Caution</span></div>' + \
+        '<div style="display:flex;align-items:center;gap:6px;"><div style="width:8px;height:8px;border-radius:50%;background:#DC2626;"></div><span style="font-size:0.75rem;color:#475569;">Stop Operations</span></div>' + \
+    '</div>'
+    st.markdown(f'<div style="overflow-x:auto;"><div style="display:flex;min-width:100%;padding:4px;">{bars}</div></div>{legend}', unsafe_allow_html=True)
 
-
-def render_weekly(by_day, days, site_type):
+def render_weekly(by_day, days, site_type="Coal Open Cast Mine"):
     today = now_ist().date()
     cols = st.columns(min(days, 7))
     for i in range(min(days, 7)):
         d = today + timedelta(days=i)
-        lbl = "Today" if i == 0 else "Tomorrow" if i == 1 else d.strftime("%a")
-        with cols[i]:
-            if d not in by_day:
-                st.markdown(f'<div class="wim-day"><div class="wim-day-label">{lbl}</div><div class="wim-day-date">{d.strftime("%d %b")}</div><div style="color:#94A3B8;font-size:0.75rem;margin-top:8px;">No data</div></div>', unsafe_allow_html=True)
-                continue
-            ds = day_summary(by_day[d], site_type, target_day=d)
-            flag = "flag-clear"
-            fcss = "Clear"
-            rain = ds["total_rain"]
-            hasl = any(x[1]["lightning"] for x in by_day[d])
-            if rain >= 15:
-                flag, fcss = "flag-heavy", "Heavy Rain"
-            elif rain >= 5:
-                flag, fcss = "flag-moderate", "Moderate Risk"
-            elif rain >= 1.5:
-                flag, fcss = "flag-light", "Light Rain"
-            elif rain >= 0.5:
-                flag, fcss = "flag-drizzle", "Drizzle"
-            elif hasl:
-                flag, fcss = "flag-lightning", "Lightning Risk"
-            st.markdown(
-                f'<div class="wim-day"><div class="wim-day-label">{lbl}</div><div class="wim-day-date">{d.strftime("%d %b")}</div><div class="wim-day-cond">{ds["condition"]}</div><div class="wim-day-rain">{rain:.1f} mm</div><div class="wim-day-temp">{ds["min_temp"]} / {ds["max_temp"]}°C</div><div class="wim-day-flag {flag}">{fcss}</div></div>',
-                unsafe_allow_html=True,
-            )
+        lbl = "Today" if i == 0 else ("Tomorrow" if i == 1 else d.strftime("%a"))
+        if d not in by_day:
+            cols[i].markdown(f'<div class="wim-day"><div class="wim-day-label">{lbl}</div><div class="wim-day-date">{d.strftime("%d %b")}</div><div style="color:#94A3B8;font-size:0.75rem;margin-top:8px;">No data</div></div>', unsafe_allow_html=True)
+            continue
+        s = day_summary(by_day[d], site_type, target_day=d); sl = s["slabs"]
+        rain = s["total_rain"]; has_l = any(x["lightning"] for x in sl)
+        max_pop = s["max_pop"]
+        if rain >= 15 and max_pop >= 25:
+            flag, fcss = "Heavy Rain", "flag-heavy"
+        elif rain >= 15 and max_pop < 25:
+            flag, fcss = "Moderate Risk", "flag-moderate"
+        elif rain >= 5 and max_pop >= 35:
+            flag, fcss = "Moderate Risk", "flag-moderate"
+        elif rain >= 5 and max_pop < 35:
+            flag, fcss = "Light Rain", "flag-light"
+        elif rain >= 1.5 and max_pop >= 45:
+            flag, fcss = "Light Rain", "flag-light"
+        elif rain >= 1.5 and max_pop < 45:
+            flag, fcss = "Drizzle", "flag-drizzle"
+        elif rain >= 0.5:
+            flag, fcss = "Drizzle", "flag-drizzle"
+        elif has_l:
+            flag, fcss = "Lightning Risk", "flag-lightning"
+        else:
+            flag, fcss = "Clear", "flag-clear"
+        day_css = "wim-day wim-day-active" if i == 0 else "wim-day"
+        cols[i].markdown(f"""<div class="{day_css}">
+            <div class="wim-day-label">{lbl}</div>
+            <div class="wim-day-date">{d.strftime('%d %b')}</div>
+            <div class="wim-day-cond">{s['condition']}</div>
+            <div class="wim-day-rain">{f"{rain} mm" if rain >= 0.5 else "0.0 mm"}{f" · {s['max_pop']}%" if rain >= 0.5 else ""}</div>
+            <div class="wim-day-temp">{s['max_temp']}° / {s['min_temp']}°C</div>
+            <span class="wim-day-flag {fcss}">{flag}</span>
+        </div>""", unsafe_allow_html=True)
 
-
-def render_sidebar(sites):
+def render_sidebar():
+    sites = load_sites()
     names = [s["name"] for s in sites]
-    st.markdown('<p style="font-size:0.7rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#94A3B8;">Mine Sites</p>', unsafe_allow_html=True)
+    _SH = 'font-size:0.7rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#94A3B8;'
+    _HR = '<hr style="border:none;border-top:1px solid #E2E8F0;margin:14px 0;">'
+    st.markdown(f'<p style="{_SH}margin:0 0 8px 0;">Mine Sites</p>', unsafe_allow_html=True)
     for site in sites:
-        isactive = site["name"] == st.session_state.active_site
-        label = f"{'●' if isactive else '○'} {site['name']} — {site['lat']:.3f}°N, {site['lon']:.3f}°E"
-        btntype = "primary" if isactive else "secondary"
-        if st.button(label, key=f"site_sel_{site['name']}", use_container_width=True, type=btntype):
+        is_active = site["name"] == st.session_state.active_site
+        label = f"{'●' if is_active else '○'} {site['name']}  —  {site['lat']:.3f}°N, {site['lon']:.3f}°E"
+        btn_type = "primary" if is_active else "secondary"
+        if st.button(label, key=f"site_sel_{site['name']}", use_container_width=True, type=btn_type):
             st.session_state.active_site = site["name"]
             st.rerun()
-    st.markdown('<hr style="border:none;border-top:1px solid #E2E8F0;margin:14px 0;">', unsafe_allow_html=True)
+    st.markdown(_HR, unsafe_allow_html=True)
+    st.markdown(f'<p style="{_SH}margin:0 0 6px 0;">Forecast Range</p>', unsafe_allow_html=True)
     days = st.slider("Forecast days", 2, 7, 7, label_visibility="collapsed")
-    st.markdown('<hr style="border:none;border-top:1px solid #E2E8F0;margin:14px 0;">', unsafe_allow_html=True)
-    activeobj = next((s for s in sites if s["name"] == st.session_state.active_site), None)
-    with st.expander("Edit selected site", expanded=False):
-        if activeobj and activeobj.get("builtin"):
-            st.info(f"{activeobj['name']} is a built-in site and cannot be edited.")
-        elif activeobj:
+    st.markdown(_HR, unsafe_allow_html=True)
+    active_obj = next((s for s in sites if s["name"] == st.session_state.active_site), None)
+    with st.expander("✏️  Edit selected site", expanded=False):
+        if active_obj and active_obj.get("builtin"):
+            st.info(f"{active_obj['name']} is a built-in site and cannot be edited.")
+        elif active_obj:
             with st.form("edit_site_form"):
-                ename = st.text_input("Name", value=activeobj["name"])
+                e_name = st.text_input("Name", value=active_obj["name"])
                 ec1, ec2 = st.columns(2)
-                elat = ec1.number_input("Lat", value=float(activeobj["lat"]), format="%.6f")
-                elon = ec2.number_input("Lon", value=float(activeobj["lon"]), format="%.6f")
-                epwd = st.text_input("Admin password", type="password", placeholder="Password")
+                e_lat = ec1.number_input("Lat", value=float(active_obj["lat"]), format="%.6f")
+                e_lon = ec2.number_input("Lon", value=float(active_obj["lon"]), format="%.6f")
+                e_pwd = st.text_input("Admin password", type="password", placeholder="Password")
                 if st.form_submit_button("Save changes", use_container_width=True):
-                    if epwd != ADMIN_PASSWORD:
+                    if e_pwd != ADMIN_PASSWORD:
                         st.error("Incorrect password.")
-                    elif not ename.strip():
+                    elif not e_name.strip():
                         st.error("Name required.")
                     else:
-                        update_site(activeobj["name"], ename.strip(), elat, elon)
-                        st.session_state.active_site = ename.strip()
+                        update_site(active_obj["name"], e_name.strip(), e_lat, e_lon)
+                        st.session_state.active_site = e_name.strip()
                         st.cache_data.clear()
                         st.success("Updated.")
                         st.rerun()
-    with st.expander("＋ Add new site", expanded=False):
+    with st.expander("＋  Add new site", expanded=False):
         with st.form("site_add_form"):
             nm = st.text_input("Site name", placeholder="e.g. Gorbi Mine")
             ac1, ac2 = st.columns(2)
@@ -1188,7 +1248,7 @@ def render_sidebar(sites):
                     st.rerun()
     custom = [s for s in sites if not s.get("builtin")]
     if custom:
-        with st.expander("🗑️ Remove site", expanded=False):
+        with st.expander("🗑️  Remove site", expanded=False):
             with st.form("site_del_form"):
                 td = st.selectbox("Site to remove", [s["name"] for s in custom])
                 dpwd = st.text_input("Admin password", type="password", key="del_pwd")
@@ -1202,7 +1262,7 @@ def render_sidebar(sites):
                         st.cache_data.clear()
                         st.success(f"'{td}' removed.")
                         st.rerun()
-    with st.expander("⭐ Set default site on load", expanded=False):
+    with st.expander("⭐  Set default site on load", expanded=False):
         with st.form("set_default_form"):
             saved = get_default_site()
             idx = names.index(saved) if saved in names else 0
@@ -1214,117 +1274,215 @@ def render_sidebar(sites):
                 else:
                     set_default_site(pick)
                     st.success(f"'{pick}' is now the default.")
-    st.markdown('<hr style="border:none;border-top:1px solid #E2E8F0;margin:14px 0;">', unsafe_allow_html=True)
+    st.markdown(_HR, unsafe_allow_html=True)
     st.caption(f"Font {'ok' if _FONT_LOADED else 'missing'} · Logo {'ok' if _LOGO_LOADED else 'missing'}")
     return days
 
-
-st.markdown(
-    f'<div class="wim-nav"><div class="wim-nav-left">{LOGO_HTML}<div class="wim-nav-sep"></div><div><div class="wim-nav-title">Adani Natural Resources</div><div class="wim-nav-sub">WIM — Weather Intelligence Mining</div></div></div><div style="font-size:0.75rem;color:#94A3B8;">{now_ist().strftime("%d %b %Y, %I:%M:%S %p IST")}</div></div><div class="wim-nav-spacer"></div>',
-    unsafe_allow_html=True,
-)
-
-sites = load_sites()
-site_names = [s["name"] for s in sites]
-site_param = st.query_params.get("site") if hasattr(st, "query_params") else None
-if isinstance(site_param, list):
-    site_param = site_param[0]
-if site_param in site_names:
-    st.session_state.active_site = site_param
-elif st.session_state.active_site not in site_names and site_names:
-    st.session_state.active_site = site_names[0]
-
-picker_col, main_col = st.columns([1, 5])
-with picker_col:
-    idx = site_names.index(st.session_state.active_site) if st.session_state.active_site in site_names else 0
-    pick = st.selectbox("Select site", site_names, index=idx, label_visibility="collapsed", key="sitepicker")
-    st.session_state.active_site = pick
-    st.caption("Mine Sites")
-    days = st.slider("Forecast days", 2, 7, 7)
-
-active = next((s for s in sites if s["name"] == st.session_state.active_site), None)
-if not active:
-    st.error("Site not found.")
+days = 7
+st.markdown(f"""<div class="wim-nav">
+    <div class="wim-nav-left">
+        {LOGO_HTML}
+        <div class="wim-nav-sep"></div>
+        <div class="wim-nav-text">
+            <div class="wim-nav-title">Adani Natural Resources</div>
+            <div class="wim-nav-sub">WIM — Weather Intelligence Mining</div>
+        </div>
+    </div>
+    <div id="wim-clock" style="font-size:0.75rem;color:#94A3B8;">{now_ist().strftime('%d %b %Y')}</div>
+</div><div class="wim-nav-spacer"></div>""", unsafe_allow_html=True)
+components.html("""
+<style>body{margin:0;padding:0;overflow:hidden;} #clk{position:fixed;top:22px;right:2.5rem;font-size:0.75rem;color:#94A3B8;font-family:'Helvetica Neue',Arial,sans-serif;z-index:99999;}</style>
+<div id="clk"></div>
+<script>
+function tick(){
+  var d=new Date(), h=d.getHours(), ampm=h>=12?'PM':'AM', h12=h%12||12;
+  var mo=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var txt=d.getDate()+' '+mo[d.getMonth()]+' '+d.getFullYear()+', '+String(h12).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0')+' '+ampm+' IST';
+  document.getElementById('clk').textContent=txt;
+  try{ var el=window.parent.document.getElementById('wim-clock'); if(el) el.textContent=txt; }catch(e){}
+}
+tick(); setInterval(tick,1000);
+</script>
+""", height=0)
+st.markdown('<div class="wim-page">', unsafe_allow_html=True)
+components.html("""
+<script>
+try{
+  const key='wim_active_site';
+  const stored=window.localStorage.getItem(key);
+  if(stored){
+    const params=new URLSearchParams(window.location.search);
+    if(!params.get('site')){
+      params.set('site', stored);
+      const newUrl=window.location.pathname+'?'+params.toString();
+      window.location.replace(newUrl);
+    }
+  }
+}catch(e){}
+</script>
+""", height=0)
+site_names = [s["name"] for s in ALL_SITES]
+qp = st.query_params if hasattr(st, "query_params") else {}
+site_param = qp.get("site") if qp else None
+options = ["Select site"] + site_names
+default_idx = site_names.index(site_param) + 1 if site_param in site_names else 0
+col_left, col_picker = st.columns([5, 1])
+with col_picker:
+    pick = st.selectbox("Select site", options, index=default_idx, label_visibility="collapsed", key="site_picker")
+if pick == "Select site":
+    st.markdown('<div class="wim-alert wim-alert-none"><div class="wim-alert-label">Select site</div>Please choose which mine you want to view predictions for.</div>', unsafe_allow_html=True)
     st.stop()
-
-with main_col:
-    st.markdown(f'<div class="wim-site-name">{active["name"]}</div><div class="wim-site-coord">{active["lat"]:.6f}°N, {active["lon"]:.6f}°E</div>', unsafe_allow_html=True)
-
-by_day, mc, src_status = build_forecast(active["lat"], active["lon"], days=days)
-
+if not hasattr(st, "session_state") or st.session_state is None:
+    st.markdown('<div class="wim-alert wim-alert-none"><div class="wim-alert-label">Error</div>Please run with: streamlit run WFS.py</div>', unsafe_allow_html=True)
+    st.stop()
+st.session_state.active_site = pick
+components.html(f"""
+<script>
+try{{ window.localStorage.setItem('wim_active_site', {json.dumps(pick)}); }}catch(e){{}}
+</script>
+""", height=0)
+site = next((s for s in ALL_SITES if s["name"] == st.session_state.active_site), None)
+if not site:
+    st.markdown('<div class="wim-alert wim-alert-none"><div class="wim-alert-label">Site not found</div>Please select another site.</div>', unsafe_allow_html=True)
+    st.stop()
+with col_left:
+    st.markdown(f'<div class="wim-site-row"><div class="wim-site-name">{site["name"]}</div><div class="wim-site-coord">{site["lat"]}°N, {site["lon"]}°E</div></div>', unsafe_allow_html=True)
+loading = st.empty()
+loading.caption(f"Fetching forecast for {site['name']}…")
+by_day, mc_data, src_status = build_forecast(site["lat"], site["lon"], days)
+loading.empty()
 if not by_day:
-    st.error("No forecast data could be loaded from any source.")
+    ok = [s for s, v in src_status.items() if v == "ok"]
+    fail = {s: v for s, v in src_status.items() if v != "ok"}
+    hint = ""
+    if any("401" in str(v) or "Unauthorized" in str(v) for v in fail.values()):
+        hint = " AccuWeather free-tier quota exhausted (resets 05:30 AM IST)."
+    if any("timeout" in str(v).lower() for v in fail.values()):
+        hint += " Open-Meteo timeout — network issue. Try Retry."
+    msg = f"Partial failure. Online: {', '.join(ok)}." if ok else "All sources unreachable."
+    diag = "<br>".join(f"• {s}: {'Quota exhausted' if '401' in v else ('Timeout' if 'timeout' in v.lower() else ('No key' if 'no key' in v else v))}" for s, v in fail.items())
+    st.markdown(f'<div class="wim-alert wim-alert-high"><div class="wim-alert-label">Data Unavailable</div>{msg}{hint}<br>{diag}</div>', unsafe_allow_html=True)
+    if st.button("Retry"):
+        st.cache_data.clear()
+        st.rerun()
     st.stop()
 
+today = now_ist().date()
 st.markdown('<div class="wim-section">7-Day Outlook</div>', unsafe_allow_html=True)
-render_weekly(by_day, days, active.get("type", "Coal Open Cast Mine"))
-
-st.markdown('<div class="wim-section">Hourly Details</div>', unsafe_allow_html=True)
-first_day = sorted(by_day.keys())[0]
-render_hourly_table(by_day[first_day], first_day)
-
-st.markdown('<div class="wim-section">Summary</div>', unsafe_allow_html=True)
-summary = day_summary(by_day[first_day], active.get("type", "Coal Open Cast Mine"), target_day=first_day)
-st.write(f"Condition: {summary['condition']}")
-st.write(f"Total rain: {summary['total_rain']} mm")
-st.write(f"Wind: {summary['avg_wind']} km/h")
-st.write(f"Visibility: {summary['min_vis']} km")
-
-slabs = summary["slabs"]
-rec = smart_rec(summary, slabs, first_day, active.get("type", "Coal Open Cast Mine"))
-st.markdown(f'<div class="wim-alert wim-alert-none">{rec}</div>', unsafe_allow_html=True)
-
-if first_day == now_ist().date() and mc:
-    st.markdown('<div class="wim-section">Radar Next 2 Hours</div>', unsafe_allow_html=True)
-    render_mc(mc)
-
-acc = rain_accum(by_day[first_day], target_day=first_day)
-st.markdown('<div class="wim-section">Rainfall Accumulation</div>', unsafe_allow_html=True)
-cols = st.columns(len(acc))
-for c, (h, (mm, pop)) in zip(cols, acc.items()):
-    with c:
-        st.write(f"{h}h")
-        st.write(f"{mm} mm")
-        st.write(f"{pop}%")
-
-trend = rain_intensity_trend(slabs)
-if trend:
-    st.markdown(f'<div class="wim-alert wim-alert-none">{trend}</div>', unsafe_allow_html=True)
-
-opt = operational_window_optimizer(slabs)
-st.markdown(f'<div class="wim-alert wim-alert-none">{opt}</div>', unsafe_allow_html=True)
-
-site_type = active.get("type", "Coal Open Cast Mine")
-if "Underground" in site_type:
-    adv = underground_advisories(slabs, by_day[first_day], site_type)
-else:
-    adv = equipment_specific_advisories(slabs, by_day[first_day], site_type)
-if adv:
-    st.markdown('<div class="wim-section">Equipment Advisories</div>', unsafe_allow_html=True)
-    for a in adv:
-        st.markdown(f'<div class="wim-alert wim-alert-none">{a}</div>', unsafe_allow_html=True)
-
-dust = dust_risk_index(slabs, by_day[first_day])
-if dust:
-    st.markdown(f'<div class="wim-alert wim-alert-none">{dust}</div>', unsafe_allow_html=True)
-
-fog = fog_dew_prediction(by_day[first_day], first_day)
-if fog:
-    st.markdown(f'<div class="wim-alert wim-alert-none">{fog}</div>', unsafe_allow_html=True)
-
-soil = soil_moisture_forecast(slabs)
-if soil:
-    st.markdown(f'<div class="wim-alert wim-alert-none">{soil}</div>', unsafe_allow_html=True)
-
-worker = worker_safety_index(by_day[first_day], slabs)
-if worker:
-    st.markdown(f'<div class="wim-alert wim-alert-none">{worker}</div>', unsafe_allow_html=True)
+render_weekly(by_day, days, site.get("type", "Coal Open Cast Mine"))
+st.markdown('<hr class="wim-hr">', unsafe_allow_html=True)
 
 st.markdown('<div class="wim-section">Day-wise Weather Conditions</div>', unsafe_allow_html=True)
-render_weekly(by_day, days, active.get("type", "Coal Open Cast Mine"))
-
-fail = {k: v for k, v in src_status.items() if v != "ok"}
-if fail:
-    st.info("Some sources were unavailable: " + ", ".join(fail.keys()))
-
-st.caption(f"Sources: {' · '.join([k for k, v in src_status.items() if v == 'ok'])} • © Adani Natural Resources {now_ist().year}")
+tab_lbls = ["Today" if i == 0 else ("Tomorrow" if i == 1 else (today + timedelta(days=i)).strftime("%a, %d %b")) for i in range(min(days, 7))]
+tab_days = [today + timedelta(days=i) for i in range(min(days, 7))]
+mine_type = site.get("type", "Coal Open Cast Mine")
+for tab, tday in zip(st.tabs(tab_lbls), tab_days):
+    with tab:
+        dh = by_day.get(tday, [])
+        if not dh:
+            st.markdown('<div class="wim-alert wim-alert-none">No forecast data for this day.</div>', unsafe_allow_html=True)
+            continue
+        ds = day_summary(dh, mine_type, target_day=tday)
+        sl = ds["slabs"]
+        rain_t = ds["total_rain"]
+        has_l = any(s["lightning"] for s in sl)
+        hiw = ds["avg_wind"] >= WIND_CAUTION
+        critical_html = ""
+        safety = worker_safety_index(dh, sl)
+        if safety:
+            is_critical_heat = "DANGEROUS HEAT INDEX" in safety or "HIGH HEAT ALERT" in safety or "HIGH HEAT" in safety
+            if is_critical_heat:
+                critical_html += f'<div style="background:#FEE2E2;border:1px solid #DC2626;border-radius:6px;padding:10px 14px;margin-bottom:10px;font-size:0.85rem;color:#DC2626;font-weight:600;"><strong>CRITICAL ALERT:</strong> {safety}</div>'
+        if has_l:
+            lightning_msg = "Lightning detected in forecast. All blasting, drilling, and work near tall equipment must halt 30 minutes before the storm and resume only after 30 clear minutes."
+            critical_html += f'<div style="background:#F3E8FF;border:1px solid #7C3AED;border-radius:6px;padding:10px 14px;margin-bottom:10px;font-size:0.85rem;color:#7C3AED;font-weight:600;"><strong>LIGHTNING WARNING:</strong> {lightning_msg}</div>'
+        very_heavy_rain = rain_t >= 15 and ds["max_pop"] >= 50
+        if very_heavy_rain:
+            rain_msg = f"Very heavy rainfall of {rain_t} mm forecast with {ds['max_pop']}% probability. Operations will be severely impacted."
+            critical_html += f'<div style="background:#FFF7ED;border:1px solid #EA580C;border-radius:6px;padding:10px 14px;margin-bottom:10px;font-size:0.85rem;color:#EA580C;font-weight:600;"><strong>SEVERE RAIN ALERT:</strong> {rain_msg}</div>'
+        if critical_html:
+            st.markdown(critical_html, unsafe_allow_html=True)
+        rec = smart_rec(ds, sl, tday, mine_type)
+        a_css = "wim-alert-high" if (rain_t >= 15 or has_l) else ("wim-alert-moderate" if (rain_t >= 5 or hiw) else "wim-alert-low")
+        st.markdown(f'<div class="wim-alert {a_css}"><div class="wim-alert-label">Forecast Advisory</div>{rec}</div>', unsafe_allow_html=True)
+        significant_weather = (ds["max_pop"] >= 50 or rain_t >= 5 or ds["avg_wind"] >= WIND_CAUTION or has_l or ds["min_vis"] <= VIS_CAUTION)
+        insights_html = ""
+        if significant_weather:
+            trend = rain_intensity_trend(sl)
+            if trend:
+                insights_html += f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:0.85rem;color:#334155;">{trend}</div>'
+        if significant_weather:
+            window = operational_window_optimizer(sl, min_vis=VIS_CAUTION, max_wind=WIND_CAUTION, max_rain=RAIN_MOD)
+            if "No continuous 4-hour safe windows" in window or "shorter work cycles" in window:
+                insights_html += f'<div style="background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:0.85rem;color:#92400E;">{window}</div>'
+        if "Underground" in mine_type:
+            equip_advisories = underground_advisories(sl, dh, mine_type)
+            no_action_marker = "no significant weather constraints"
+        else:
+            equip_advisories = equipment_specific_advisories(sl, dh, mine_type)
+            no_action_marker = "All equipment can operate"
+        real_advisories = [adv for adv in equip_advisories if no_action_marker not in adv]
+        if real_advisories:
+            insights_html += '<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:12px 16px;font-size:0.82rem;color:#92400E;margin-bottom:12px;">'
+            insights_html += f'<div style="font-weight:700;margin-bottom:8px;color:#B45309;">{"Incline &amp; Shaft Advisories" if "Underground" in mine_type else "Equipment Advisories"}</div>'
+            for adv in real_advisories:
+                insights_html += f'<div style="margin:6px 0;padding-left:8px;border-left:3px solid #F59E0B;">{adv}</div>'
+            insights_html += '</div>'
+        dust_risk = dust_risk_index(sl, dh)
+        if dust_risk and ("HIGH" in dust_risk or "MODERATE" in dust_risk):
+            insights_html += f'<div style="background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#92400E;">{dust_risk}</div>'
+        fog_dew = fog_dew_prediction(dh, tday)
+        if fog_dew:
+            insights_html += f'<div style="background:#E0F2FE;border:1px solid #7DD3FC;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#0369A1;">{fog_dew}</div>'
+        soil = soil_moisture_forecast(sl)
+        if soil and ("SATURATED" in soil or "SOFT" in soil):
+            insights_html += f'<div style="background:#F3E8FF;border:1px solid #D8B4FE;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#7E22CE;">{soil}</div>'
+        if insights_html:
+            st.markdown(insights_html, unsafe_allow_html=True)
+        m_cols = st.columns(7)
+        cloud_val = f"{int(ds['cloud'])}%" if ds.get("cloud") else "—"
+        show_rain_prob = rain_t > 0 and ds["max_pop"] >= 15
+        for col, lbl, val in zip(m_cols,
+                ["Condition", "Max Temp", "Min Temp", "Total Rain", "Rain Prob.", "Wind", "Cloud Cover"],
+                [ds["condition"], f"{ds['max_temp']}°C", f"{ds['min_temp']}°C", f"{rain_t} mm",
+                 f"{ds['max_pop']}%" if show_rain_prob else "—", f"{ds['avg_wind']} km/h", cloud_val]):
+            col.markdown(f'<div class="wim-metric"><div class="wim-metric-label">{lbl}</div><div class="wim-metric-value">{val}</div></div>', unsafe_allow_html=True)
+        if tday == today and mc_data:
+            st.markdown('<div class="wim-section">Radar — Next 2 Hours (MinuteCast)</div>', unsafe_allow_html=True)
+            render_mc(mc_data)
+        acc = rain_accum(dh, target_day=tday)
+        pfx = "Next" if tday == today else "First"
+        has_rain = any(acc[h][0] > 0 for h in (2, 4, 6, 12, 24))
+        if has_rain:
+            st.markdown(f'<div class="wim-section">Rainfall Accumulation {"" if tday == today else "(From Midnight)"}</div>', unsafe_allow_html=True)
+            a_cols = st.columns(5)
+            for idx, h in enumerate((2, 4, 6, 12, 24)):
+                mm, pop = acc[h]
+                css, risk, rc = ("acc-high", "High Risk", "risk-high") if mm >= 15 else (("acc-watch", "Monitor", "risk-watch") if mm >= 5 else ("acc-safe", "Safe", "risk-safe"))
+                a_cols[idx].markdown(
+                    f'<div class="wim-accum {css}"><div class="wim-accum-period">{pfx} {h}H</div>'
+                    f'<div class="wim-accum-val">{mm} mm</div>'
+                    f'<div class="wim-accum-pop">{pop}% probability</div>'
+                    f'<div class="wim-accum-risk {rc}">{risk}</div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="wim-section">2-Hour Precipitation Windows</div>', unsafe_allow_html=True)
+        if sl:
+            rows = ""
+            for s in sl:
+                mm = s["mm"]
+                rain_td = f'<td class="td-alert">{rain_badge_html(mm)}</td>' if mm >= RAIN_HEAVY else (f'<td class="td-warn">{rain_badge_html(mm)}</td>' if mm >= RAIN_MOD else f'<td>{rain_badge_html(mm)}</td>')
+                w = s["wind"]
+                wind_td = f'<td class="td-alert">{w} km/h</td>' if w >= WIND_STOP else (f'<td class="td-warn">{w} km/h</td>' if w >= WIND_CAUTION else f'<td>{w} km/h</td>')
+                v = s["vis"]
+                vis_td = f'<td class="td-alert">{v} km</td>' if v <= VIS_STOP else (f'<td class="td-warn">{v} km</td>' if v <= VIS_CAUTION else f'<td>{v} km</td>')
+                l_td = '<td class="td-alert"><span class="wim-badge b-lightning">Alert</span></td>' if s["lightning"] else '<td style="color:#94A3B8;">—</td>'
+                impact = mining_impact_html(mm, w, v, s["lightning"])
+                rows += f'<tr><td style="font-weight:600;color:#334155;">{s["label"]}</td>{rain_td}<td style="color:#64748B;">{s["pop"] if mm > 0 else 0}%</td>{wind_td}{vis_td}{l_td}<td>{impact}</td></tr>'
+            st.markdown('<div style="overflow-x:auto;"><table class="wim-table"><thead><tr><th>Time Window</th><th>Rainfall</th><th>Probability</th><th>Wind Speed</th><th>Visibility</th><th>Lightning</th><th>Mining Impact</th></tr></thead><tbody>' + rows + '</tbody></table></div>', unsafe_allow_html=True)
+        st.markdown('<div class="wim-section">Hourly Operations Timeline</div>', unsafe_allow_html=True)
+        render_hourly_graph(dh, tday)
+srcs = ["Open-Meteo (ECMWF)"]
+if ACCUWEATHER_KEY: srcs += ["AccuWeather", "MinuteCast (radar)"]
+if OPENWEATHER_KEY: srcs.append("OpenWeather")
+if TOMORROWIO_KEY: srcs.append("Tomorrow.io")
+st.markdown(f'<p style="font-size:0.68rem;color:#94A3B8;text-align:center;padding:0.5rem 0 2rem;">Sources: {" · ".join(srcs)} • Rain confirmed across 2+ sources • © Adani Natural Resources {now_ist().year}</p>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
