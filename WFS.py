@@ -1,10 +1,10 @@
 """
 Adani Natural Resources — WIM (Weather Intelligence Mining)
-v5.0 — Operations forecast, persistent Supabase cache,
-quota-safe 6-hour MinuteCast cadence, horizon-aware source fusion,
-lightning propagation, provider backoff, mining impact guidance
+v6.0 — Production source layer, persistent Supabase cache,
+quota-safe 6-hour MinuteCast cadence, current provider authentication,
+AccuWeather coordinate-to-location audit, OpenWeather 4.0, IMD official warnings
 """
-import os, json, requests, collections, base64, concurrent.futures, hashlib
+import os, json, requests, collections, base64, concurrent.futures, hashlib, math
 import streamlit.components.v1 as components
 from datetime import datetime, timedelta
 import pytz
@@ -288,15 +288,22 @@ ACCUWEATHER_KEY = _secret("ACCUWEATHER_KEY")
 OPENWEATHER_KEY = _secret("OPENWEATHER_KEY")
 TOMORROWIO_KEY = _secret("TOMORROWIO_KEY")
 WEATHERSTACK_KEY = _secret("WEATHERSTACK_KEY")
+IMD_API_KEY = _secret("IMD_API_KEY")
+IMD_AUTH_HEADER = _secret("IMD_AUTH_HEADER", "Authorization")
+IMD_AUTH_PREFIX = _secret("IMD_AUTH_PREFIX", "Bearer ")
 SUPABASE_URL = str(_secret("SUPABASE_URL")).rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = _secret("SUPABASE_SERVICE_ROLE_KEY")
-OPENWEATHER_ONECALL_ENABLED = _secret_bool("OPENWEATHER_ONECALL_ENABLED", False)
+# If an OpenWeather key exists, try One Call 4.0 by default. Set false explicitly
+# in Streamlit secrets if the One Call by Call product has not been activated.
+OPENWEATHER_ONECALL_ENABLED = _secret_bool("OPENWEATHER_ONECALL_ENABLED", bool(OPENWEATHER_KEY))
+# Weatherstack free/current plans are too small for continuous mine operations.
+WEATHERSTACK_ENABLED = _secret_bool("WEATHERSTACK_ENABLED", False)
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Adani@2026#Mine")
 SITES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mine_sites.json")
 
 # Persistent API-cache policy. Values are intentionally conservative so a
 # Streamlit restart/redeploy does not immediately burn vendor quotas again.
-ACCUWEATHER_LOCATION_TTL_MIN = 7 * 24 * 60
+ACCUWEATHER_LOCATION_TTL_MIN = 30 * 24 * 60
 ACCUWEATHER_HOURLY_TTL_MIN = 90
 # MinuteCast free trial is only 50 requests / rolling 24h. With 12 mine
 # sites, a six-hour refresh cadence is at most 48 successful attempts/day.
@@ -306,20 +313,23 @@ MINUTECAST_TTL_MIN = 6 * 60
 MINUTECAST_SOFT_LIMIT_24H = 48
 PROVIDER_BACKOFF_TTL_MIN = 6 * 60
 WEATHERSTACK_TTL_MIN = 60
+TOMORROW_TTL_MIN = 30
+OPENWEATHER_TTL_MIN = 60
+IMD_TTL_MIN = 30
 
 DEFAULT_SITES = [
-    {"id": "builtin-suliyari",   "name": "Suliyari",         "lat": 23.941626, "lon": 82.331934, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-dhirauli",   "name": "Dhirauli",        "lat": 23.936440, "lon": 82.358836, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-parsa",      "name": "Parsa",           "lat": 22.824950, "lon": 82.804340, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-talabira",   "name": "Talabira",       "lat": 21.756317, "lon": 83.970446, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-gare-pelma", "name": "Gare Pelma III",  "lat": 22.105303, "lon": 83.292822, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-gp-ii",      "name": "Gare Pelma II",   "lat": 22.160838, "lon": 83.472457, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-pcb",        "name": "PCB",             "lat": 22.854601, "lon": 82.763414, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-pekb",       "name": "PEKB",            "lat": 22.823873, "lon": 82.805322, "type": "Coal Open Cast Mine", "builtin": True},
-    {"id": "builtin-kurmitar",   "name": "Kurmitar",        "lat": 21.749766, "lon": 85.167471, "type": "Iron Ore Mine", "builtin": True},
-    {"id": "builtin-taldih",     "name": "Taldih",          "lat": 21.91056,  "lon": 85.18014,  "type": "Iron Ore Mine", "builtin": True},
-    {"id": "builtin-gondbahera-ujheni", "name": "Gondbahera Ujheni", "lat": 24.175830, "lon": 82.369544, "type": "Underground Mine (Incline/Shaft — Greenfield)", "builtin": True},
-    {"id": "builtin-gondkhari",  "name": "Gondkhari",       "lat": 21.143326, "lon": 78.934850, "type": "Underground Mine (Incline/Shaft — Greenfield)", "builtin": True},
+    {"id": "builtin-suliyari",   "name": "Suliyari",         "lat": 23.941626, "lon": 82.331934, "type": "Coal Open Cast Mine", "imd_subdivision": "East Madhya Pradesh", "builtin": True},
+    {"id": "builtin-dhirauli",   "name": "Dhirauli",        "lat": 23.936440, "lon": 82.358836, "type": "Coal Open Cast Mine", "imd_subdivision": "East Madhya Pradesh", "builtin": True},
+    {"id": "builtin-parsa",      "name": "Parsa",           "lat": 22.824950, "lon": 82.804340, "type": "Coal Open Cast Mine", "imd_subdivision": "Chhattisgarh", "builtin": True},
+    {"id": "builtin-talabira",   "name": "Talabira",        "lat": 21.756317, "lon": 83.970446, "type": "Coal Open Cast Mine", "imd_subdivision": "Odisha", "builtin": True},
+    {"id": "builtin-gare-pelma", "name": "Gare Pelma III",  "lat": 22.105303, "lon": 83.292822, "type": "Coal Open Cast Mine", "imd_subdivision": "Chhattisgarh", "builtin": True},
+    {"id": "builtin-gp-ii",      "name": "Gare Pelma II",   "lat": 22.160838, "lon": 83.472457, "type": "Coal Open Cast Mine", "imd_subdivision": "Chhattisgarh", "builtin": True},
+    {"id": "builtin-pcb",        "name": "PCB",             "lat": 22.854601, "lon": 82.763414, "type": "Coal Open Cast Mine", "imd_subdivision": "Chhattisgarh", "builtin": True},
+    {"id": "builtin-pekb",       "name": "PEKB",            "lat": 22.823873, "lon": 82.805322, "type": "Coal Open Cast Mine", "imd_subdivision": "Chhattisgarh", "builtin": True},
+    {"id": "builtin-kurmitar",   "name": "Kurmitar",        "lat": 21.749766, "lon": 85.167471, "type": "Iron Ore Mine", "imd_subdivision": "Odisha", "builtin": True},
+    {"id": "builtin-taldih",     "name": "Taldih",          "lat": 21.910560, "lon": 85.180140, "type": "Iron Ore Mine", "imd_subdivision": "Odisha", "builtin": True},
+    {"id": "builtin-gondbahera-ujheni", "name": "Gondbahera Ujheni", "lat": 24.175830, "lon": 82.369544, "type": "Underground Mine (Incline/Shaft — Greenfield)", "imd_subdivision": "East Madhya Pradesh", "builtin": True},
+    {"id": "builtin-gondkhari",  "name": "Gondkhari",       "lat": 21.143326, "lon": 78.934850, "type": "Underground Mine (Incline/Shaft — Greenfield)", "imd_subdivision": "Vidarbha", "builtin": True},
 ]
 IST = pytz.timezone('Asia/Kolkata')
 UTC = pytz.utc
@@ -464,8 +474,22 @@ def condition_str(total, descs, max_pop=0):
     return "Clear"
 
 def _coord_cache_key(lat, lon):
-    # Keep enough precision that nearby mine sites never collide in Supabase.
+    # Six decimals keeps every configured mine coordinate in a distinct cache key.
     return f"{float(lat):.6f},{float(lon):.6f}"
+
+def _credential_fp(secret):
+    return hashlib.sha256(str(secret or "").encode("utf-8")).hexdigest()[:10]
+
+def _haversine_km(lat1, lon1, lat2, lon2):
+    try:
+        r = 6371.0088
+        p1, p2 = math.radians(float(lat1)), math.radians(float(lat2))
+        dp = math.radians(float(lat2) - float(lat1))
+        dl = math.radians(float(lon2) - float(lon1))
+        a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+        return r * 2 * math.atan2(math.sqrt(a), math.sqrt(max(0.0, 1 - a)))
+    except Exception:
+        return None
 
 
 def _supabase_enabled():
@@ -596,6 +620,8 @@ def _provider_backoff_key(provider):
         "accuweather_minutecast": ACCUWEATHER_KEY,
         "tomorrow_io": TOMORROWIO_KEY,
         "weatherstack": WEATHERSTACK_KEY,
+        "openweather": OPENWEATHER_KEY,
+        "imd": IMD_API_KEY,
     }.get(provider, "")
     fingerprint = hashlib.sha256(str(secret).encode("utf-8")).hexdigest()[:10] if secret else "nokey"
     return f"{provider}|{fingerprint}"
@@ -706,7 +732,7 @@ def db_usage_record(source):
 
 def _safe_error(err):
     text = str(err)
-    for secret in [ACCUWEATHER_KEY, OPENWEATHER_KEY, TOMORROWIO_KEY, WEATHERSTACK_KEY, SUPABASE_SERVICE_ROLE_KEY]:
+    for secret in [ACCUWEATHER_KEY, OPENWEATHER_KEY, TOMORROWIO_KEY, WEATHERSTACK_KEY, IMD_API_KEY, SUPABASE_SERVICE_ROLE_KEY]:
         if secret:
             text = text.replace(str(secret), "***")
     return text
@@ -721,20 +747,35 @@ def _weatherstack_error(data):
     return None
 
 
-@st.cache_data(ttl=1800)
 def fetch_openweather(lat, lon):
-    # One Call is a separate OpenWeather subscription. Do not burn 401s unless
-    # the user explicitly enables it in Streamlit secrets.
+    """OpenWeather One Call 4.0 hourly timeline, persisted for 60 minutes."""
     if not OPENWEATHER_KEY:
         return None, "no key"
     if not OPENWEATHER_ONECALL_ENABLED:
-        return None, "disabled — set OPENWEATHER_ONECALL_ENABLED=true after enabling One Call"
+        return None, "disabled — set OPENWEATHER_ONECALL_ENABLED=true after activating One Call by Call"
+    blocked = provider_backoff_get("openweather")
+    if blocked:
+        return None, f"backoff — {blocked}"
+    cache_key = f"{_coord_cache_key(lat, lon)}|1h-v4"
+    cached = db_cache_get("openweather_4_hourly", cache_key)
+    if cached is not None:
+        return cached, None
     try:
         r = requests.get(
-            f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}"
-            f"&units=metric&exclude=minutely,daily,alerts&appid={OPENWEATHER_KEY}", timeout=TIMEOUT)
-        r.raise_for_status()
-        return r.json(), None
+            "https://api.openweathermap.org/data/4.0/onecall/timeline/1h",
+            params={"lat": lat, "lon": lon, "units": "metric", "appid": OPENWEATHER_KEY},
+            timeout=TIMEOUT,
+        )
+        if not r.ok:
+            err = _provider_http_error(r)
+            if r.status_code in (401, 403):
+                provider_backoff_set("openweather", "One Call 4.0 is not authorized for this key")
+            elif r.status_code == 429:
+                provider_backoff_set("openweather", "rate limit reached")
+            return None, err
+        data = r.json()
+        db_cache_set("openweather_4_hourly", cache_key, data, OPENWEATHER_TTL_MIN)
+        return data, None
     except Exception as e:
         return None, _safe_error(e)
 
@@ -760,24 +801,33 @@ def fetch_open_meteo(lat, lon, days=7):
     return None, f"Failed after {RETRY_MAX} attempts: {last_err}"
 
 
-@st.cache_data(ttl=1800)
 def fetch_tomorrow_io(lat, lon):
+    # Use the same `apikey` query authentication shown by Tomorrow.io's dashboard.
+    # Do not Streamlit-cache auth failures: replacing a key must take effect now.
     if not TOMORROWIO_KEY:
         return None, "no key"
     blocked = provider_backoff_get("tomorrow_io")
     if blocked:
         return None, f"backoff — {blocked}"
+    cache_key = f"{_coord_cache_key(lat, lon)}|1h"
+    cached = db_cache_get("tomorrow_forecast", cache_key)
+    if cached is not None:
+        return cached, None
     try:
         r = requests.get(
             "https://api.tomorrow.io/v4/weather/forecast",
-            headers={"apikey": TOMORROWIO_KEY, "Accept": "application/json"},
-            params={"location": f"{lat},{lon}", "units": "metric"},
+            params={
+                "location": f"{float(lat):.6f},{float(lon):.6f}",
+                "units": "metric",
+                "timesteps": "1h",
+                "apikey": TOMORROWIO_KEY,
+            },
+            headers={"Accept": "application/json", "Accept-Encoding": "gzip, deflate"},
             timeout=TIMEOUT,
         )
         if not r.ok:
             try:
-                body = r.json()
-                detail = body.get("message") or body.get("error") or body
+                body = r.json(); detail = body.get("message") or body.get("error") or body
             except Exception:
                 detail = r.text[:300]
             msg = f"HTTP {r.status_code}: {detail}"
@@ -786,13 +836,16 @@ def fetch_tomorrow_io(lat, lon):
             elif r.status_code == 429:
                 provider_backoff_set("tomorrow_io", "rate limit reached")
             return None, msg
-        return r.json(), None
+        data = r.json()
+        db_cache_set("tomorrow_forecast", cache_key, data, TOMORROW_TTL_MIN)
+        return data, None
     except Exception as e:
         return None, _safe_error(e)
 
 
-@st.cache_data(ttl=1800)
 def fetch_weatherstack(lat, lon, days=7):
+    if not WEATHERSTACK_ENABLED:
+        return None, "disabled — optional provider; set WEATHERSTACK_ENABLED=true only with a suitable plan"
     if not WEATHERSTACK_KEY:
         return None, "no key"
     blocked = provider_backoff_get("weatherstack")
@@ -859,76 +912,90 @@ def _provider_http_error(response):
         detail = response.text[:300] if response.text else response.reason
     return f"HTTP {response.status_code}: {detail}"
 
-def _fetch_accuweather_location_key(lat, lon):
+def _fetch_accuweather_location(lat, lon):
+    """Resolve AccuWeather's location key from the selected mine's exact lat/lon."""
     if not ACCUWEATHER_KEY:
         return None, "no key"
     blocked = provider_backoff_get("accuweather_core")
     if blocked:
         return None, f"backoff — {blocked}"
     cache_key = _coord_cache_key(lat, lon)
-    cached = db_cache_get("accuweather_location", cache_key)
+    cached = db_cache_get("accuweather_location_v2", cache_key)
     if isinstance(cached, dict) and cached.get("key"):
-        return cached["key"], None
+        return cached, None
     try:
         r = requests.get(
             "https://dataservice.accuweather.com/locations/v1/cities/geoposition/search",
             headers=_accuweather_headers(),
-            params={"q": f"{lat},{lon}"},
+            params={"q": f"{float(lat):.6f},{float(lon):.6f}"},
             timeout=TIMEOUT,
         )
         if not r.ok:
             err = _provider_http_error(r)
             if r.status_code == 401:
-                provider_backoff_set("accuweather_core", "API key is not authorized; verify the active 2026 subscription/key")
+                provider_backoff_set("accuweather_core", "API key is not authorized; verify the active Core Weather subscription/key")
             elif r.status_code == 403:
-                provider_backoff_set("accuweather_core", "Core Weather subscription does not permit this request")
+                provider_backoff_set("accuweather_core", "Core Weather subscription does not permit location lookup")
             elif r.status_code == 429:
                 provider_backoff_set("accuweather_core", "Core Weather rate limit reached")
             return None, err
-        key = r.json().get("Key", "")
+        data = r.json()
+        key = str(data.get("Key") or "").strip()
         if not key:
-            return None, "no location key"
-        db_cache_set("accuweather_location", cache_key, {"key": key}, ACCUWEATHER_LOCATION_TTL_MIN)
-        return key, None
+            return None, "no location key returned"
+        gp = data.get("GeoPosition") or {}
+        rlat, rlon = gp.get("Latitude"), gp.get("Longitude")
+        distance = _haversine_km(lat, lon, rlat, rlon) if rlat is not None and rlon is not None else None
+        admin = data.get("AdministrativeArea") or {}
+        country = data.get("Country") or {}
+        meta = {
+            "key": key,
+            "requested_lat": float(lat), "requested_lon": float(lon),
+            "resolved_lat": rlat, "resolved_lon": rlon,
+            "distance_km": round(distance, 2) if distance is not None else None,
+            "name": data.get("LocalizedName") or data.get("EnglishName") or "",
+            "admin": admin.get("LocalizedName") or admin.get("EnglishName") or "",
+            "country": country.get("LocalizedName") or country.get("EnglishName") or "",
+        }
+        db_cache_set("accuweather_location_v2", cache_key, meta, ACCUWEATHER_LOCATION_TTL_MIN)
+        return meta, None
     except Exception as e:
         return None, _safe_error(e)
 
 
-@st.cache_data(ttl=900)
 def fetch_accuweather_hourly(lat, lon):
     if not ACCUWEATHER_KEY:
         return None, "no key"
     cache_key = _coord_cache_key(lat, lon)
-    cached = db_cache_get("accuweather_hourly", cache_key)
-    if cached is not None:
+    cached = db_cache_get("accuweather_hourly_v2", cache_key)
+    if isinstance(cached, dict) and "hours" in cached:
         return cached, None
-    key, key_err = _fetch_accuweather_location_key(lat, lon)
-    if not key:
-        return None, key_err or "no location key"
+    location, loc_err = _fetch_accuweather_location(lat, lon)
+    if not location:
+        return None, loc_err or "no location key"
+    key = location["key"]
     try:
         fr = requests.get(
             f"https://dataservice.accuweather.com/forecasts/v1/hourly/12hour/{key}",
             headers=_accuweather_headers(),
-            params={"details": "true", "metric": "true"},
-            timeout=TIMEOUT,
+            params={"details": "true", "metric": "true"}, timeout=TIMEOUT,
         )
         if not fr.ok:
             err = _provider_http_error(fr)
             if fr.status_code == 401:
-                provider_backoff_set("accuweather_core", "API key is not authorized; verify the active 2026 subscription/key")
+                provider_backoff_set("accuweather_core", "API key is not authorized; verify the active Core Weather subscription/key")
             elif fr.status_code == 403:
                 provider_backoff_set("accuweather_core", "Core Weather hourly forecast is not enabled for this key")
             elif fr.status_code == 429:
                 provider_backoff_set("accuweather_core", "Core Weather rate limit reached")
             return None, err
-        data = fr.json()
-        db_cache_set("accuweather_hourly", cache_key, data, ACCUWEATHER_HOURLY_TTL_MIN)
-        return data, None
+        result = {"hours": fr.json(), "location": location}
+        db_cache_set("accuweather_hourly_v2", cache_key, result, ACCUWEATHER_HOURLY_TTL_MIN)
+        return result, None
     except Exception as e:
         return None, _safe_error(e)
 
 
-@st.cache_data(ttl=300)
 def fetch_minutecast(lat, lon):
     """Call MinuteCast at most once per site per six-hour cache window.
 
@@ -996,9 +1063,57 @@ def fetch_minutecast(lat, lon):
         return None, _safe_error(e)
 
 
-def build_forecast(lat, lon, days=7):
-    # IMD district/station IDs require a separate mapping/onboarding step, so the
-    # broken coordinate call has intentionally been removed from the live fan-out.
+def _imd_headers():
+    headers = {"Accept": "application/json"}
+    if IMD_API_KEY:
+        header = str(IMD_AUTH_HEADER or "Authorization").strip()
+        prefix = str(IMD_AUTH_PREFIX or "")
+        headers[header] = f"{prefix}{IMD_API_KEY}"
+    return headers
+
+def fetch_imd_subdivision_warning(subdivision):
+    """Official IMD subdivision warning overlay (not a numerical forecast weight)."""
+    if not subdivision:
+        return None, "no IMD subdivision mapped for this site"
+    if not IMD_API_KEY:
+        return None, "ready — add IMD_API_KEY after IMD API Management access is issued"
+    blocked = provider_backoff_get("imd")
+    if blocked:
+        return None, f"backoff — {blocked}"
+    data = db_cache_get("imd_subdivisionwarning", "all")
+    if data is None:
+        try:
+            r = requests.get("https://api.imd.gov.in/api/v1/subdivisionwarning", headers=_imd_headers(), timeout=TIMEOUT)
+            if not r.ok:
+                err = _provider_http_error(r)
+                if r.status_code in (401, 403):
+                    provider_backoff_set("imd", "IMD API Management credential/auth scheme is not authorized")
+                elif r.status_code == 429:
+                    provider_backoff_set("imd", "IMD API rate limit reached")
+                return None, err
+            data = r.json(); db_cache_set("imd_subdivisionwarning", "all", data, IMD_TTL_MIN)
+        except Exception as e:
+            return None, _safe_error(e)
+    rows = data.get("data", data) if isinstance(data, dict) else data
+    if not isinstance(rows, list):
+        return None, "unexpected IMD response format"
+    target = str(subdivision).strip().lower()
+    for row in rows:
+        if not isinstance(row, dict): continue
+        name = str(row.get("SUBDIV") or row.get("Subdivision") or row.get("subdivision") or "").strip()
+        if name.lower() == target:
+            return row, None
+    return None, f"online but no warning record matched subdivision '{subdivision}'"
+
+def _imd_today_warning(row):
+    if not isinstance(row, dict):
+        return "", ""
+    warning = str(row.get("day1_warning") or row.get("Day_1_Warning") or row.get("Day_1") or "").strip()
+    color = str(row.get("day1_color") or row.get("Day1_Color") or "").strip()
+    return warning, color
+
+def build_forecast(lat, lon, days=7, imd_subdivision=""):
+    # IMD is surfaced as an official safety advisory, not averaged into rain mm.
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
         futs = {
             "ow": ex.submit(fetch_openweather, lat, lon),
@@ -1007,6 +1122,7 @@ def build_forecast(lat, lon, days=7):
             "aw": ex.submit(fetch_accuweather_hourly, lat, lon),
             "mc": ex.submit(fetch_minutecast, lat, lon),
             "ws": ex.submit(fetch_weatherstack, lat, lon, days),
+            "imd": ex.submit(fetch_imd_subdivision_warning, imd_subdivision),
         }
         ow, ow_err = futs["ow"].result()
         om, om_err = futs["om"].result()
@@ -1014,17 +1130,27 @@ def build_forecast(lat, lon, days=7):
         aw, aw_err = futs["aw"].result()
         mc, mc_err = futs["mc"].result()
         ws, ws_err = futs["ws"].result()
+        imd, imd_err = futs["imd"].result()
 
     db_ok, db_err = db_health_check()
 
+    aw_status = str(aw_err)
+    if isinstance(aw, dict) and aw.get("hours") is not None:
+        loc = aw.get("location") or {}
+        parts = ["ok"]
+        if loc.get("key"): parts.append(f"location key {loc['key']}")
+        if loc.get("name"): parts.append(str(loc["name"]))
+        if loc.get("distance_km") is not None: parts.append(f"mapped {loc['distance_km']} km from mine coordinates")
+        aw_status = " — ".join(parts)
+    imd_status = f"ok — {imd_subdivision} official warning layer" if imd else str(imd_err)
     src_status = {
         "Open-Meteo": "ok" if om else str(om_err),
         "Tomorrow.io": "ok" if tm else str(tm_err),
-        "AccuWeather": "ok" if aw else str(aw_err),
+        "AccuWeather": aw_status,
         "MinuteCast": _minutecast_status(mc, mc_err),
+        "OpenWeather": "ok — One Call 4.0 hourly (up to 20h)" if ow else str(ow_err),
+        "IMD": imd_status,
         "Weatherstack": (("ok — current conditions only" if ws.get("_wim_weatherstack_mode") == "current_only" else "ok") if isinstance(ws, dict) else str(ws_err)),
-        "OpenWeather": "ok" if ow else str(ow_err),
-        "IMD": "disabled — configure official district/station IDs before enabling",
         "Supabase cache": "ok" if db_ok else (db_err or "not configured — required for persistent quota-safe caching"),
     }
 
@@ -1049,8 +1175,9 @@ def build_forecast(lat, lon, days=7):
             cloud=float(cloud or 0),
         )
 
-    if ow and "hourly" in ow:
-        for e in ow["hourly"]:
+    if ow and isinstance(ow, dict):
+        ow_hours = ow.get("data") or ow.get("hourly") or []
+        for e in ow_hours:
             hk = utc_to_ist(datetime.fromtimestamp(e["dt"], tz=UTC)).replace(minute=0, second=0, microsecond=0)
             wid = e["weather"][0]["id"] if e.get("weather") else 0
             thunder = 200 <= int(wid or 0) < 300
@@ -1148,7 +1275,8 @@ def build_forecast(lat, lon, days=7):
             )
 
     if aw:
-        for e in aw:
+        aw_hours = aw.get("hours", []) if isinstance(aw, dict) else aw
+        for e in aw_hours:
             try:
                 dt = datetime.fromisoformat(e.get("DateTime", ""))
                 if dt.tzinfo is None:
@@ -1209,7 +1337,7 @@ def build_forecast(lat, lon, days=7):
             if src == "weatherstack":
                 return 0.30 if lead_h <= 1.5 else 0.12
             if src == "openweather":
-                return 0.22
+                return 0.30 if lead_h <= 20 else 0.0
             return 0.0
 
         def wavg(field, default=0.0):
@@ -1299,7 +1427,7 @@ def build_forecast(lat, lon, days=7):
                 deduplicated.append((hk, d))
         by_day[date_key] = deduplicated
 
-    return dict(by_day), mc_active, src_status
+    return dict(by_day), mc_active, src_status, imd
 
 def generate_fixed_slabs():
     slabs = []
@@ -1972,7 +2100,9 @@ with col_left:
     st.markdown(f'<div class="wim-site-row"><div class="wim-site-name">{site["name"]}</div><div class="wim-site-coord">{site["lat"]}°N, {site["lon"]}°E</div></div>', unsafe_allow_html=True)
 loading = st.empty()
 loading.caption(f"Fetching forecast for {site['name']}…")
-by_day, mc_data, src_status = build_forecast(site["lat"], site["lon"], days)
+by_day, mc_data, src_status, imd_advisory = build_forecast(
+    site["lat"], site["lon"], days, site.get("imd_subdivision", "")
+)
 loading.empty()
 if by_day:
     with st.expander("Data source health", expanded=False):
@@ -1981,16 +2111,45 @@ if by_day:
             ok_state = str(source_state).startswith("ok")
             label = ("✓ " + ("online" if source_state == "ok" else source_state)) if ok_state else source_state
             status_cols[idx % 2].caption(f"{source_name}: {label}")
+        if ACCUWEATHER_KEY:
+            st.caption("AccuWeather location keys are resolved from each mine's configured coordinates and cached separately for 30 days.")
+            if st.button("Audit all AccuWeather site mappings", key="audit_all_accuweather_locations"):
+                audit = []
+                for audit_site in ALL_SITES:
+                    loc, loc_err = _fetch_accuweather_location(audit_site["lat"], audit_site["lon"])
+                    audit.append({
+                        "Site": audit_site["name"],
+                        "Requested coordinates": _coord_cache_key(audit_site["lat"], audit_site["lon"]),
+                        "Location key": (loc or {}).get("key", "—"),
+                        "AccuWeather location": (loc or {}).get("name", "—"),
+                        "Mapped distance": (f"{loc.get('distance_km')} km" if loc and loc.get("distance_km") is not None else "—"),
+                        "Status": "OK" if loc else str(loc_err),
+                    })
+                counts = collections.Counter(r["Location key"] for r in audit if r["Location key"] != "—")
+                for row in audit:
+                    if row["Location key"] != "—" and counts[row["Location key"]] > 1:
+                        row["Status"] = "Shared AccuWeather key — exact-coordinate WIM/MinuteCast caches remain separate"
+                st.dataframe(audit, use_container_width=True, hide_index=True)
 # A mine-operations forecast should not look equally certain when only one
 # weather provider is actually contributing. Surface this explicitly.
 live_weather_sources = [
     s for s, v in src_status.items()
-    if s not in {"IMD", "Supabase cache"} and str(v).startswith("ok")
+    if s not in {"IMD", "Supabase cache", "Weatherstack"} and str(v).startswith("ok")
 ]
 if by_day and len(live_weather_sources) < 2:
     st.markdown(
         '<div class="wim-alert wim-alert-moderate"><div class="wim-alert-label">Reduced forecast confidence</div>'
-        'Only one live forecast source is currently contributing. WIM can still show planning guidance, but do not use it as the sole real-time stop-work/lightning safety signal until additional providers or mine-site observations are online.</div>',
+        'Only one live numerical forecast source is currently contributing. WIM can still show planning guidance, but do not use it as the sole real-time stop-work/lightning safety signal until additional providers or mine-site observations are online.</div>',
+        unsafe_allow_html=True,
+    )
+
+imd_warning, imd_color = _imd_today_warning(imd_advisory)
+if imd_warning and imd_warning.lower() not in {"nil", "no warning", "no weather"}:
+    wl = imd_warning.lower()
+    severe = any(k in wl for k in ["thunder", "lightning", "very heavy", "extremely heavy", "hail", "squall"])
+    css = "wim-alert-high" if severe else "wim-alert-moderate"
+    st.markdown(
+        f'<div class="wim-alert {css}"><div class="wim-alert-label">Official IMD Advisory — {site.get("imd_subdivision", "")}</div>{imd_warning}</div>',
         unsafe_allow_html=True,
     )
 
@@ -2131,7 +2290,8 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
 srcs = ["Open-Meteo"]
 if TOMORROWIO_KEY: srcs.append("Tomorrow.io")
 if ACCUWEATHER_KEY: srcs += ["AccuWeather", "MinuteCast"]
-if WEATHERSTACK_KEY: srcs.append("Weatherstack")
-if OPENWEATHER_KEY and OPENWEATHER_ONECALL_ENABLED: srcs.append("OpenWeather One Call")
+if WEATHERSTACK_KEY and WEATHERSTACK_ENABLED: srcs.append("Weatherstack")
+if OPENWEATHER_KEY and OPENWEATHER_ONECALL_ENABLED: srcs.append("OpenWeather One Call 4.0")
+if IMD_API_KEY: srcs.append("IMD official warnings")
 st.markdown(f'<p style="font-size:0.68rem;color:#94A3B8;text-align:center;padding:0.5rem 0 2rem;">Sources: {" · ".join(srcs)} • Rain confirmed across 2+ sources • © Adani Natural Resources {now_ist().year}</p>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
