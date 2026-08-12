@@ -269,11 +269,36 @@ div[data-testid="stSelectbox"] [role="option"][aria-selected="true"],div[data-te
 st.markdown(_CSS, unsafe_allow_html=True)
 
 # CONFIGURATION
-ACCUWEATHER_KEY = st.secrets.get("ACCUWEATHER_KEY", os.getenv("ACCUWEATHER_KEY", ""))
-OPENWEATHER_KEY = st.secrets.get("OPENWEATHER_KEY", os.getenv("OPENWEATHER_KEY", ""))
-TOMORROWIO_KEY = st.secrets.get("TOMORROWIO_KEY", os.getenv("TOMORROWIO_KEY", ""))
+def _secret(name, default=""):
+    try:
+        value = st.secrets.get(name, None)
+    except Exception:
+        value = None
+    if value is None or value == "":
+        value = os.getenv(name, default)
+    return value
+
+def _secret_bool(name, default=False):
+    value = _secret(name, str(default))
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+ACCUWEATHER_KEY = _secret("ACCUWEATHER_KEY")
+OPENWEATHER_KEY = _secret("OPENWEATHER_KEY")
+TOMORROWIO_KEY = _secret("TOMORROWIO_KEY")
+WEATHERSTACK_KEY = _secret("WEATHERSTACK_KEY")
+SUPABASE_URL = str(_secret("SUPABASE_URL")).rstrip("/")
+SUPABASE_SERVICE_ROLE_KEY = _secret("SUPABASE_SERVICE_ROLE_KEY")
+OPENWEATHER_ONECALL_ENABLED = _secret_bool("OPENWEATHER_ONECALL_ENABLED", False)
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Adani@2026#Mine")
 SITES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mine_sites.json")
+
+# Persistent API-cache policy. Values are intentionally conservative so a
+# Streamlit restart/redeploy does not immediately burn vendor quotas again.
+ACCUWEATHER_LOCATION_TTL_MIN = 7 * 24 * 60
+ACCUWEATHER_HOURLY_TTL_MIN = 60
+MINUTECAST_TTL_MIN = 30
+MINUTECAST_SOFT_LIMIT_24H = 45
+WEATHERSTACK_TTL_MIN = 60
 
 DEFAULT_SITES = [
     {"id": "builtin-suliyari",   "name": "Suliyari",         "lat": 23.941626, "lon": 82.331934, "type": "Coal Open Cast Mine", "builtin": True},
@@ -302,11 +327,12 @@ RAIN_MOD = 1.5
 RAIN_HEAVY = 5.0
 
 API_WEIGHTS = {
-    "accuweather": 0.40,
-    "open_meteo": 0.25,
-    "openweather": 0.20,
-    "tomorrow_io": 0.10,
-    "imd": 0.05
+    "accuweather": 0.35,
+    "tomorrow_io": 0.25,
+    "open_meteo": 0.20,
+    "weatherstack": 0.10,
+    "openweather": 0.10,
+    "minutecast": 0.00,
 }
 
 def load_sites():
@@ -439,25 +465,164 @@ def condition_str(total, descs, max_pop=0):
         if api_rain_type == "drizzle": return "Drizzle"
     return "Clear"
 
+def _coord_cache_key(lat, lon):
+    # Keep enough precision that nearby mine sites never collide in Supabase.
+    return f"{float(lat):.6f},{float(lon):.6f}"
+
+
+def _supabase_enabled():
+    return bool(SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)
+
+
+def _supabase_headers(extra=None):
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json",
+    }
+    if extra:
+        headers.update(extra)
+    return headers
+
+
+def db_cache_get(source, cache_key):
+    """Return unexpired JSON payload from Supabase, or None when unavailable."""
+    if not _supabase_enabled():
+        return None
+    try:
+        r = requests.get(
+            f"{SUPABASE_URL}/rest/v1/weather_api_cache",
+            headers=_supabase_headers(),
+            params={
+                "select": "payload,expires_at",
+                "source": f"eq.{source}",
+                "cache_key": f"eq.{cache_key}",
+                "order": "fetched_at.desc",
+                "limit": "1",
+            },
+            timeout=8,
+        )
+        r.raise_for_status()
+        rows = r.json()
+        if not rows:
+            return None
+        expires = rows[0].get("expires_at")
+        if expires:
+            exp_dt = datetime.fromisoformat(str(expires).replace("Z", "+00:00"))
+            if exp_dt <= datetime.now(UTC):
+                return None
+        return rows[0].get("payload")
+    except Exception:
+        # DB cache must never take the weather app down.
+        return None
+
+
+def db_cache_set(source, cache_key, payload, ttl_minutes):
+    if not _supabase_enabled() or payload is None:
+        return False
+    try:
+        now_utc = datetime.now(UTC)
+        body = {
+            "source": source,
+            "cache_key": cache_key,
+            "payload": payload,
+            "fetched_at": now_utc.isoformat(),
+            "expires_at": (now_utc + timedelta(minutes=ttl_minutes)).isoformat(),
+        }
+        r = requests.post(
+            f"{SUPABASE_URL}/rest/v1/weather_api_cache",
+            headers=_supabase_headers({"Prefer": "resolution=merge-duplicates,return=minimal"}),
+            params={"on_conflict": "source,cache_key"},
+            json=body,
+            timeout=8,
+        )
+        r.raise_for_status()
+        return True
+    except Exception:
+        return False
+
+
+def db_usage_count_24h(source):
+    """Conservative rolling-24h count used to protect tiny trial quotas."""
+    if not _supabase_enabled():
+        return None
+    try:
+        since = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
+        r = requests.get(
+            f"{SUPABASE_URL}/rest/v1/weather_api_usage",
+            headers=_supabase_headers({"Prefer": "count=exact", "Range-Unit": "items", "Range": "0-0"}),
+            params={"select": "id", "source": f"eq.{source}", "called_at": f"gte.{since}"},
+            timeout=8,
+        )
+        r.raise_for_status()
+        content_range = r.headers.get("Content-Range", "")
+        if "/" in content_range:
+            total = content_range.rsplit("/", 1)[-1]
+            if total.isdigit():
+                return int(total)
+        return len(r.json())
+    except Exception:
+        return None
+
+
+def db_usage_record(source):
+    if not _supabase_enabled():
+        return
+    try:
+        requests.post(
+            f"{SUPABASE_URL}/rest/v1/weather_api_usage",
+            headers=_supabase_headers({"Prefer": "return=minimal"}),
+            json={"source": source, "called_at": datetime.now(UTC).isoformat()},
+            timeout=8,
+        ).raise_for_status()
+    except Exception:
+        pass
+
+
+def _safe_error(err):
+    text = str(err)
+    for secret in [ACCUWEATHER_KEY, OPENWEATHER_KEY, TOMORROWIO_KEY, WEATHERSTACK_KEY, SUPABASE_SERVICE_ROLE_KEY]:
+        if secret:
+            text = text.replace(str(secret), "***")
+    return text
+
+
+def _weatherstack_error(data):
+    if isinstance(data, dict) and data.get("error"):
+        err = data["error"]
+        if isinstance(err, dict):
+            return err.get("info") or err.get("type") or str(err)
+        return str(err)
+    return None
+
+
 @st.cache_data(ttl=1800)
 def fetch_openweather(lat, lon):
-    if not OPENWEATHER_KEY: return None, "no key"
+    # One Call is a separate OpenWeather subscription. Do not burn 401s unless
+    # the user explicitly enables it in Streamlit secrets.
+    if not OPENWEATHER_KEY:
+        return None, "no key"
+    if not OPENWEATHER_ONECALL_ENABLED:
+        return None, "disabled — set OPENWEATHER_ONECALL_ENABLED=true after enabling One Call"
     try:
         r = requests.get(
             f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}"
             f"&units=metric&exclude=minutely,daily,alerts&appid={OPENWEATHER_KEY}", timeout=TIMEOUT)
-        r.raise_for_status(); data = r.json()
-        return data, None
+        r.raise_for_status()
+        return r.json(), None
     except Exception as e:
-        return None, str(e)
+        return None, _safe_error(e)
+
 
 @st.cache_data(ttl=1800)
 def fetch_open_meteo(lat, lon, days=7):
+    # nearest prevents terrain-optimised snapping from unnecessarily selecting
+    # a farther land grid cell for two very close mine coordinates.
     url = (
         f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
         f"&hourly=temperature_2m,precipitation,weather_code,wind_speed_10m,"
-        f"precipitation_probability,visibility,relative_humidity_2m,cloudcover"
-        f"&forecast_days={days}&timezone=Asia%2FKolkata"
+        f"precipitation_probability,visibility,relative_humidity_2m,cloud_cover"
+        f"&forecast_days={days}&timezone=Asia%2FKolkata&cell_selection=nearest"
     )
     last_err = "unknown"
     for _ in range(RETRY_MAX):
@@ -469,64 +634,148 @@ def fetch_open_meteo(lat, lon, days=7):
             last_err = str(e)
     return None, f"Failed after {RETRY_MAX} attempts: {last_err}"
 
+
 @st.cache_data(ttl=1800)
 def fetch_tomorrow_io(lat, lon):
-    if not TOMORROWIO_KEY: return None, "no key"
+    if not TOMORROWIO_KEY:
+        return None, "no key"
     try:
         r = requests.get(
             f"https://api.tomorrow.io/v4/weather/forecast?location={lat},{lon}"
             f"&units=metric&apikey={TOMORROWIO_KEY}", timeout=TIMEOUT)
-        r.raise_for_status(); return r.json(), None
-    except Exception as e:
-        return None, str(e)
-
-@st.cache_data(ttl=1800)
-def fetch_accuweather_hourly(lat, lon):
-    if not ACCUWEATHER_KEY: return None, "no key"
-    try:
-        lr = requests.get(
-            f"https://dataservice.accuweather.com/locations/v1/cities/geoposition/search"
-            f"?q={lat},{lon}&apikey={ACCUWEATHER_KEY}", timeout=TIMEOUT)
-        lr.raise_for_status()
-        key = lr.json().get("Key", "")
-        if not key: return None, "no location key"
-        fr = requests.get(
-            f"https://dataservice.accuweather.com/forecasts/v1/hourly/12hour/{key}"
-            f"?apikey={ACCUWEATHER_KEY}&details=true&metric=true", timeout=TIMEOUT)
-        fr.raise_for_status(); return fr.json(), None
-    except Exception as e:
-        return None, str(e)
-
-@st.cache_data(ttl=900)
-def fetch_minutecast(lat, lon):
-    if not ACCUWEATHER_KEY: return None, "no key"
-    try:
-        r = requests.get(
-            f"https://dataservice.accuweather.com/forecasts/v1/minute"
-            f"?q={lat},{lon}&apikey={ACCUWEATHER_KEY}&details=true", timeout=TIMEOUT)
-        r.raise_for_status()
-        out = []
-        for m in r.json().get("Intervals", []):
-            dbz = m.get("Dbz", 0)
-            mmhr = ((10 ** (dbz / 10.0)) / 200.0) ** (1 / 1.6) if dbz > 0 else 0.0
-            out.append({"minute": m.get("StartMinute", 0), "mm_per_min": mmhr / 60.0,
-                        "is_precip": m.get("HasPrecipitation", False), "dbz": dbz})
-        return (out if out else None), None
-    except Exception as e:
-        return None, str(e)
-
-@st.cache_data(ttl=1800)
-def fetch_imd(lat, lon):
-    try:
-        r = requests.get(
-            f"https://mausam.imd.gov.in/api/nowcast_district_api.php"
-            f"?lat={lat}&lon={lon}", timeout=TIMEOUT)
         r.raise_for_status()
         return r.json(), None
     except Exception as e:
-        return None, str(e)
+        return None, _safe_error(e)
+
+
+@st.cache_data(ttl=1800)
+def fetch_weatherstack(lat, lon, days=7):
+    if not WEATHERSTACK_KEY:
+        return None, "no key"
+    cache_key = f"{_coord_cache_key(lat, lon)}|days={min(days, 7)}"
+    cached = db_cache_get("weatherstack_forecast", cache_key)
+    if cached is not None:
+        return cached, None
+    try:
+        r = requests.get(
+            "https://api.weatherstack.com/forecast",
+            params={
+                "access_key": WEATHERSTACK_KEY,
+                "query": f"{lat},{lon}",
+                "forecast_days": min(days, 7),
+                "hourly": 1,
+                "units": "m",
+            },
+            timeout=TIMEOUT,
+        )
+        r.raise_for_status()
+        data = r.json()
+        err = _weatherstack_error(data)
+        if err:
+            return None, err
+        db_cache_set("weatherstack_forecast", cache_key, data, WEATHERSTACK_TTL_MIN)
+        return data, None
+    except Exception as e:
+        return None, _safe_error(e)
+
+
+def _fetch_accuweather_location_key(lat, lon):
+    if not ACCUWEATHER_KEY:
+        return None, "no key"
+    cache_key = _coord_cache_key(lat, lon)
+    cached = db_cache_get("accuweather_location", cache_key)
+    if isinstance(cached, dict) and cached.get("key"):
+        return cached["key"], None
+    try:
+        r = requests.get(
+            "https://dataservice.accuweather.com/locations/v1/cities/geoposition/search",
+            params={"q": f"{lat},{lon}", "apikey": ACCUWEATHER_KEY},
+            timeout=TIMEOUT,
+        )
+        r.raise_for_status()
+        key = r.json().get("Key", "")
+        if not key:
+            return None, "no location key"
+        # Cache rather than hard-code. This still refreshes periodically.
+        db_cache_set("accuweather_location", cache_key, {"key": key}, ACCUWEATHER_LOCATION_TTL_MIN)
+        return key, None
+    except Exception as e:
+        return None, _safe_error(e)
+
+
+@st.cache_data(ttl=900)
+def fetch_accuweather_hourly(lat, lon):
+    if not ACCUWEATHER_KEY:
+        return None, "no key"
+    cache_key = _coord_cache_key(lat, lon)
+    cached = db_cache_get("accuweather_hourly", cache_key)
+    if cached is not None:
+        return cached, None
+    key, key_err = _fetch_accuweather_location_key(lat, lon)
+    if not key:
+        return None, key_err or "no location key"
+    try:
+        fr = requests.get(
+            f"https://dataservice.accuweather.com/forecasts/v1/hourly/12hour/{key}",
+            params={"apikey": ACCUWEATHER_KEY, "details": "true", "metric": "true"},
+            timeout=TIMEOUT,
+        )
+        fr.raise_for_status()
+        data = fr.json()
+        db_cache_set("accuweather_hourly", cache_key, data, ACCUWEATHER_HOURLY_TTL_MIN)
+        return data, None
+    except Exception as e:
+        return None, _safe_error(e)
+
+
+@st.cache_data(ttl=300)
+def fetch_minutecast(lat, lon):
+    if not ACCUWEATHER_KEY:
+        return None, "no key"
+    cache_key = _coord_cache_key(lat, lon)
+    cached = db_cache_get("accuweather_minutecast", cache_key)
+    if cached is not None:
+        return cached, None
+
+    # Free MinuteCast trial is tiny. Leave headroom instead of exhausting it.
+    used = db_usage_count_24h("accuweather_minutecast")
+    if used is not None and used >= MINUTECAST_SOFT_LIMIT_24H:
+        return None, f"quota guard — {used} MinuteCast calls in last 24h"
+
+    try:
+        r = requests.get(
+            "https://dataservice.accuweather.com/forecasts/v1/minute",
+            params={"q": f"{lat},{lon}", "apikey": ACCUWEATHER_KEY, "details": "true"},
+            timeout=TIMEOUT,
+        )
+        r.raise_for_status()
+        db_usage_record("accuweather_minutecast")
+        payload = r.json()
+        out = []
+        for m in payload.get("Intervals", []):
+            dbz = float(m.get("Dbz") or 0)
+            mmhr = ((10 ** (dbz / 10.0)) / 200.0) ** (1 / 1.6) if dbz > 0 else 0.0
+            minute = int(m.get("Minute") if m.get("Minute") is not None else m.get("StartMinute", 0))
+            lightning_rate = float(m.get("LightningRate") or 0)
+            out.append({
+                "minute": minute,
+                "mm_per_min": mmhr / 60.0,
+                "is_precip": dbz > 0 or bool(m.get("PrecipitationType")),
+                "dbz": dbz,
+                "lightning_rate": lightning_rate,
+            })
+        result = out if out else None
+        if result is not None:
+            db_cache_set("accuweather_minutecast", cache_key, result, MINUTECAST_TTL_MIN)
+        return result, None
+    except Exception as e:
+        return None, _safe_error(e)
+
 
 def build_forecast(lat, lon, days=7):
+    # IMD district/station IDs require a separate mapping/onboarding step, so the
+    # broken coordinate call has intentionally been removed from the live fan-out.
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
         futs = {
             "ow": ex.submit(fetch_openweather, lat, lon),
@@ -534,72 +783,125 @@ def build_forecast(lat, lon, days=7):
             "tm": ex.submit(fetch_tomorrow_io, lat, lon),
             "aw": ex.submit(fetch_accuweather_hourly, lat, lon),
             "mc": ex.submit(fetch_minutecast, lat, lon),
-            "imd": ex.submit(fetch_imd, lat, lon),
+            "ws": ex.submit(fetch_weatherstack, lat, lon, days),
         }
         ow, ow_err = futs["ow"].result()
         om, om_err = futs["om"].result()
         tm, tm_err = futs["tm"].result()
         aw, aw_err = futs["aw"].result()
         mc, mc_err = futs["mc"].result()
-        imd, imd_err = futs["imd"].result()
+        ws, ws_err = futs["ws"].result()
 
     src_status = {
         "Open-Meteo": "ok" if om else str(om_err),
+        "Tomorrow.io": "ok" if tm else str(tm_err),
         "AccuWeather": "ok" if aw else str(aw_err),
         "MinuteCast": "ok" if mc else str(mc_err),
+        "Weatherstack": "ok" if ws else str(ws_err),
         "OpenWeather": "ok" if ow else str(ow_err),
-        "Tomorrow.io": "ok" if tm else str(tm_err),
-        "IMD": "ok" if imd else str(imd_err),
+        "IMD": "disabled — configure official district/station IDs before enabling",
     }
 
     now_h = now_ist().replace(minute=0, second=0, microsecond=0)
     cutoff = now_h + timedelta(days=days)
     raw = {}
 
-    def add(hk, src, temp, rain, pop, wind, vis, lightning, desc, hum=0, cloud=0):
+    def add(hk, src, temp, rain, pop, wind, vis, lightning, desc, hum=0, cloud=0, lightning_prob=0):
         if hk < now_h - timedelta(hours=1) or hk > cutoff:
             return
         raw.setdefault(hk, {})
-        raw[hk][src] = dict(temp=temp, rain=max(0.0, float(rain or 0)), pop=float(pop or 0), wind=float(wind or 0),
-                            vis=float(vis or 10), lightning=bool(lightning), desc=str(desc or ""), hum=float(hum or 0), cloud=float(cloud or 0))
-
-    if imd:
-        try:
-            rain = imd.get("rainfall", 0) if isinstance(imd, dict) else 0
-            add(now_h, "imd", temp=0, rain=rain, pop=80 if rain > 0 else 20, wind=0, vis=10.0, lightning=False, desc="IMD Nowcast", hum=0)
-        except Exception:
-            pass
+        raw[hk][src] = dict(
+            temp=float(temp or 0),
+            rain=max(0.0, float(rain or 0)),
+            pop=float(pop or 0),
+            wind=float(wind or 0),
+            vis=float(vis if vis is not None else 10),
+            lightning=bool(lightning),
+            lightning_prob=max(0.0, min(100.0, float(lightning_prob or (100 if lightning else 0)))),
+            desc=str(desc or ""),
+            hum=float(hum or 0),
+            cloud=float(cloud or 0),
+        )
 
     if ow and "hourly" in ow:
         for e in ow["hourly"]:
             hk = utc_to_ist(datetime.fromtimestamp(e["dt"], tz=UTC)).replace(minute=0, second=0, microsecond=0)
             wid = e["weather"][0]["id"] if e.get("weather") else 0
-            add(hk, "openweather", e["temp"], e.get("rain", {}).get("1h", 0), e.get("pop", 0) * 100,
-                e["wind_speed"] * 3.6, e.get("visibility", 10000) / 1000,
-                200 <= wid < 300, e["weather"][0]["description"] if e.get("weather") else "", e.get("humidity", 0))
+            thunder = 200 <= int(wid or 0) < 300
+            add(
+                hk, "openweather", e.get("temp", 0), e.get("rain", {}).get("1h", 0), e.get("pop", 0) * 100,
+                e.get("wind_speed", 0) * 3.6, e.get("visibility", 10000) / 1000,
+                thunder, e["weather"][0]["description"] if e.get("weather") else "", e.get("humidity", 0),
+                lightning_prob=100 if thunder else 0,
+            )
 
     if om and "hourly" in om:
         h = om["hourly"]
         vis = h.get("visibility", [])
         hum = h.get("relative_humidity_2m", [])
-        cloud = h.get("cloudcover", [])
+        cloud = h.get("cloud_cover", h.get("cloudcover", []))
+        weather_codes = h.get("weather_code", [])
         for i, ts in enumerate(h["time"]):
-            hk = datetime.fromisoformat(ts).replace(tzinfo=IST).replace(minute=0, second=0, microsecond=0)
-            add(hk, "open_meteo", h["temperature_2m"][i], h["precipitation"][i], h["precipitation_probability"][i],
+            hk = IST.localize(datetime.fromisoformat(ts)).replace(minute=0, second=0, microsecond=0)
+            code = int(weather_codes[i] or 0) if i < len(weather_codes) else 0
+            thunder = code in {95, 96, 99}
+            add(
+                hk, "open_meteo", h["temperature_2m"][i], h["precipitation"][i], h["precipitation_probability"][i],
                 h["wind_speed_10m"][i], vis[i] / 1000 if i < len(vis) and vis[i] is not None else 10,
-                False, "", hum[i] if i < len(hum) else 0, cloud[i] if i < len(cloud) else 0)
+                thunder, "Thunderstorm" if thunder else "", hum[i] if i < len(hum) else 0,
+                cloud[i] if i < len(cloud) else 0, lightning_prob=100 if thunder else 0,
+            )
 
     if tm and "timelines" in tm and "hourly" in tm["timelines"]:
         for iv in tm["timelines"]["hourly"]:
             try:
-                dt_utc = UTC.localize(datetime.strptime(iv["time"], '%Y-%m-%dT%H:%M:%SZ'))
+                dt_utc = datetime.fromisoformat(str(iv["time"]).replace("Z", "+00:00"))
+                if dt_utc.tzinfo is None:
+                    dt_utc = UTC.localize(dt_utc)
             except Exception:
                 continue
             hk = utc_to_ist(dt_utc).replace(minute=0, second=0, microsecond=0)
-            v = iv["values"]
-            add(hk, "tomorrow_io", v.get("temperature", 0), v.get("precipitationIntensity", 0), v.get("precipitationProbability", 0),
-                v.get("windSpeed", 0) * 3.6, v.get("visibility", 10000) / 1000 if v.get("visibility") not in [None, 10000] else 10,
-                v.get("lightningStrikeCount", 0) > 0 or v.get("weatherCode") == 8000, "", v.get("humidity", 0))
+            v = iv.get("values", {})
+            try:
+                weather_code = int(v.get("weatherCode") or 0)
+            except Exception:
+                weather_code = 0
+            flash_density = float(v.get("lightningFlashRateDensity") or 0)
+            legacy_strikes = float(v.get("lightningStrikeCount") or 0)
+            thunder_prob = float(v.get("thunderstormProbability") or 0)
+            thunder = weather_code == 8000 or flash_density > 0 or legacy_strikes > 0 or thunder_prob >= 20
+            add(
+                hk, "tomorrow_io", v.get("temperature", 0), v.get("precipitationIntensity", 0), v.get("precipitationProbability", 0),
+                v.get("windSpeed", 0) * 3.6, v.get("visibility", 10), thunder,
+                "Thunderstorm" if weather_code == 8000 else "", v.get("humidity", 0), v.get("cloudCover", 0),
+                lightning_prob=thunder_prob if thunder_prob > 0 else (100 if thunder else 0),
+            )
+
+    if ws and isinstance(ws, dict):
+        forecasts = ws.get("forecast", {})
+        for date_str, day in forecasts.items():
+            for e in day.get("hourly", []) or []:
+                try:
+                    raw_time = str(e.get("time", "0")).zfill(4)
+                    dt_local = datetime.strptime(f"{date_str} {raw_time}", "%Y-%m-%d %H%M")
+                    hk = IST.localize(dt_local).replace(minute=0, second=0, microsecond=0)
+                except Exception:
+                    continue
+                descs = e.get("weather_descriptions") or []
+                desc = descs[0] if descs else ""
+                try:
+                    wcode = int(e.get("weather_code") or 0)
+                except Exception:
+                    wcode = 0
+                thunder_prob = float(e.get("chanceofthunder") or e.get("chance_of_thunder") or 0)
+                thunder = thunder_prob >= 20 or "thunder" in desc.lower() or wcode in {386, 389, 392, 395}
+                add(
+                    hk, "weatherstack", e.get("temperature", 0), e.get("precip", 0),
+                    e.get("chanceofrain", e.get("chance_of_rain", 0)),
+                    e.get("wind_speed", e.get("windspeed", 0)), e.get("visibility", 10), thunder, desc,
+                    e.get("humidity", 0), e.get("cloudcover", e.get("cloud_cover", 0)),
+                    lightning_prob=thunder_prob if thunder_prob > 0 else (100 if thunder else 0),
+                )
 
     if aw:
         for e in aw:
@@ -610,51 +912,59 @@ def build_forecast(lat, lon, days=7):
                 hk = dt.astimezone(IST).replace(minute=0, second=0, microsecond=0)
             except Exception:
                 continue
-            add(hk, "accuweather", e.get("Temperature", {}).get("Value", 0),
+            thunder_prob = float(e.get("ThunderstormProbability") or 0)
+            phrase = str(e.get("IconPhrase", ""))
+            thunder = thunder_prob >= 20 or "thunder" in phrase.lower() or "t-storm" in phrase.lower()
+            add(
+                hk, "accuweather", e.get("Temperature", {}).get("Value", 0),
                 e.get("Rain", {}).get("Value", 0) + e.get("Snow", {}).get("Value", 0),
                 e.get("PrecipitationProbability", 0), e.get("Wind", {}).get("Speed", {}).get("Value", 0),
-                e.get("Visibility", {}).get("Metric", {}).get("Value", 10.0), e.get("ThunderstormProbability", 0) > 30,
-                e.get("IconPhrase", ""), e.get("RelativeHumidity", 0))
+                e.get("Visibility", {}).get("Metric", {}).get("Value", 10.0), thunder, phrase,
+                e.get("RelativeHumidity", 0), e.get("CloudCover", 0), lightning_prob=thunder_prob,
+            )
 
     if mc:
         now_t = now_ist()
-        mc_h = collections.defaultdict(float)
+        mc_h = collections.defaultdict(lambda: {"rain": 0.0, "lightning_rate": 0.0})
         for m in mc:
-            hk = (now_t + timedelta(minutes=m["minute"])).replace(minute=0, second=0, microsecond=0)
-            mc_h[hk] += m["mm_per_min"]
-        for hk, mm in mc_h.items():
+            hk = (now_t + timedelta(minutes=int(m.get("minute", 0)))).replace(minute=0, second=0, microsecond=0)
+            mc_h[hk]["rain"] += float(m.get("mm_per_min", 0) or 0)
+            mc_h[hk]["lightning_rate"] = max(mc_h[hk]["lightning_rate"], float(m.get("lightning_rate", 0) or 0))
+        for hk, vals in mc_h.items():
+            mm = vals["rain"]
+            lightning = vals["lightning_rate"] > 0
             raw.setdefault(hk, {})
-            raw[hk]["minutecast"] = dict(temp=0, rain=mm, pop=100 if mm > 0.05 else 0, wind=0, vis=10.0, lightning=False, desc="", hum=0)
+            raw[hk]["minutecast"] = dict(
+                temp=0, rain=mm, pop=100 if mm > 0.05 else 0, wind=0, vis=10.0,
+                lightning=lightning, lightning_prob=100 if lightning else 0,
+                desc="MinuteCast lightning" if lightning else "", hum=0, cloud=0,
+            )
 
     final = []
     for hk in sorted(raw.keys()):
         srcs = raw[hk]
 
         def wavg(field):
-            total_weight = sum(API_WEIGHTS.get(src, 0) for src in srcs.keys())
+            valid = [(d[field], API_WEIGHTS.get(src, 0)) for src, d in srcs.items() if API_WEIGHTS.get(src, 0) > 0]
+            total_weight = sum(weight for _, weight in valid)
             if total_weight == 0:
                 vals = [d[field] for d in srcs.values()]
                 return sum(vals) / len(vals) if vals else 0
-            weighted_sum = sum(d[field] * API_WEIGHTS.get(src, 0) for src, d in srcs.items())
-            return weighted_sum / total_weight
+            return sum(value * weight for value, weight in valid) / total_weight
 
         def wavg_vis():
-            current_hour = now_ist().hour
             valid_vis = [(d["vis"], API_WEIGHTS.get(src, 0)) for src, d in srcs.items()
-                         if d["vis"] > 0 or (d["vis"] == 0 and 20 <= current_hour <= 6)]
+                         if API_WEIGHTS.get(src, 0) > 0 and d["vis"] is not None and d["vis"] >= 0]
             if not valid_vis:
                 return 10
-            weighted_sum = sum(vis * weight for vis, weight in valid_vis)
             total_weight = sum(weight for _, weight in valid_vis)
-            return weighted_sum / total_weight
+            return sum(vis_value * weight for vis_value, weight in valid_vis) / total_weight if total_weight else 10
 
-        rain_vals = [d["rain"] for d in srcs.values()]
-        is_current_hour = (hk == now_h)
-        has_imd_rain = "imd" in srcs and srcs["imd"]["rain"] > 0.1
-        if is_current_hour and has_imd_rain:
-            rain_out = max(rain_vals)
-        elif len(rain_vals) >= 2:
-            rain_out = sorted(rain_vals)[len(rain_vals)//2]
+        # MinuteCast is nowcast/radar-like short-horizon input, so include it in
+        # the rain median only when it actually reports precipitation.
+        rain_vals = [d["rain"] for src, d in srcs.items() if src != "minutecast" or d["rain"] > 0]
+        if len(rain_vals) >= 2:
+            rain_out = sorted(rain_vals)[len(rain_vals) // 2]
         elif len(rain_vals) == 1:
             rain_out = rain_vals[0]
         else:
@@ -669,13 +979,18 @@ def build_forecast(lat, lon, days=7):
             else:
                 best_desc = collections.Counter(descs).most_common(1)[0][0]
 
+        lightning_prob = max((d.get("lightning_prob", 0) for d in srcs.values()), default=0)
+        lightning_sources = [src for src, d in srcs.items() if d.get("lightning")]
         final.append((hk, {
             "temp": round(wavg("temp"), 1), "rain_mm": round(rain_out, 2),
             "pop": round(pop_out, 1), "wind_kmh": round(wavg("wind"), 1),
             "vis_km": round(wavg_vis(), 1), "humidity": round(wavg("hum"), 1),
             "cloud": round(wavg("cloud"), 0),
-            "lightning": any(d["lightning"] for d in srcs.values()),
-            "desc": best_desc, "n_sources": len(srcs)}))
+            "lightning": bool(lightning_sources),
+            "lightning_prob": round(lightning_prob, 0),
+            "lightning_sources": lightning_sources,
+            "desc": best_desc, "n_sources": len(srcs),
+        }))
 
     by_day = collections.defaultdict(list)
     for hk, d in final:
@@ -714,7 +1029,7 @@ def hour_to_slab(h, slabs):
 def build_slabs(hourly, is_today=False):
     slabs = generate_fixed_slabs()
     current_hour = now_ist().hour
-    raw = collections.defaultdict(lambda: dict(rain=0, pop=[], wind=[], vis=[], lightning=[], hum=[], count=0))
+    raw = collections.defaultdict(lambda: dict(rain=0, pop=[], wind=[], vis=[], lightning=[], lightning_prob=[], hum=[], count=0))
     for hk, d in hourly:
         sk = hour_to_slab(hk.hour, slabs)
         if not sk:
@@ -733,6 +1048,7 @@ def build_slabs(hourly, is_today=False):
         r["wind"].append(d["wind_kmh"])
         r["vis"].append(d["vis_km"])
         r["lightning"].append(d["lightning"])
+        r["lightning_prob"].append(d.get("lightning_prob", 100 if d["lightning"] else 0))
         r["hum"].append(d["humidity"])
         r["count"] += 1
     slabs_out = []
@@ -745,7 +1061,8 @@ def build_slabs(hourly, is_today=False):
         slabs_out.append(dict(label=sk[2], sort=sk[0], mm=round(r["rain"], 1),
                               pop=pop_val, wind=round(avg(r["wind"]), 1),
                               vis=round(avg(r["vis"]), 1), hum=round(avg(r["hum"]), 1),
-                              lightning=any(r["lightning"])))
+                              lightning=any(r["lightning"]),
+                              lightning_prob=round(max(r["lightning_prob"]) if r["lightning_prob"] else 0, 0)))
     slabs_out.sort(key=lambda x: x["sort"])
     return slabs_out
 
@@ -1351,12 +1668,19 @@ loading = st.empty()
 loading.caption(f"Fetching forecast for {site['name']}…")
 by_day, mc_data, src_status = build_forecast(site["lat"], site["lon"], days)
 loading.empty()
+if by_day:
+    with st.expander("Data source health", expanded=False):
+        status_cols = st.columns(2)
+        for idx, (source_name, source_state) in enumerate(src_status.items()):
+            ok_state = source_state == "ok"
+            label = "✓ online" if ok_state else source_state
+            status_cols[idx % 2].caption(f"{source_name}: {label}")
 if not by_day:
     ok = [s for s, v in src_status.items() if v == "ok"]
     fail = {s: v for s, v in src_status.items() if v != "ok"}
     hint = ""
     if any("401" in str(v) or "Unauthorized" in str(v) for v in fail.values()):
-        hint = " AccuWeather free-tier quota exhausted (resets 05:30 AM IST)."
+        hint = " One or more providers rejected authentication/quota. Check the Data source health details and provider subscription status."
     if any("timeout" in str(v).lower() for v in fail.values()):
         hint += " Open-Meteo timeout — network issue. Try Retry."
     msg = f"Partial failure. Online: {', '.join(ok)}." if ok else "All sources unreachable."
@@ -1474,15 +1798,21 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
                 wind_td = f'<td class="td-alert">{w} km/h</td>' if w >= WIND_STOP else (f'<td class="td-warn">{w} km/h</td>' if w >= WIND_CAUTION else f'<td>{w} km/h</td>')
                 v = s["vis"]
                 vis_td = f'<td class="td-alert">{v} km</td>' if v <= VIS_STOP else (f'<td class="td-warn">{v} km</td>' if v <= VIS_CAUTION else f'<td>{v} km</td>')
-                l_td = '<td class="td-alert"><span class="wim-badge b-lightning">Alert</span></td>' if s["lightning"] else '<td style="color:#94A3B8;">—</td>'
+                if s["lightning"]:
+                    lp = int(s.get("lightning_prob", 0) or 0)
+                    l_label = f"⚡ {lp}%" if 0 < lp < 100 else "⚡ Alert"
+                    l_td = f'<td class="td-alert"><span class="wim-badge b-lightning">{l_label}</span></td>'
+                else:
+                    l_td = '<td style="color:#94A3B8;">—</td>'
                 impact = mining_impact_html(mm, w, v, s["lightning"])
                 rows += f'<tr><td style="font-weight:600;color:#334155;">{s["label"]}</td>{rain_td}<td style="color:#64748B;">{s["pop"] if mm > 0 else 0}%</td>{wind_td}{vis_td}{l_td}<td>{impact}</td></tr>'
             st.markdown('<div style="overflow-x:auto;"><table class="wim-table"><thead><tr><th>Time Window</th><th>Rainfall</th><th>Probability</th><th>Wind Speed</th><th>Visibility</th><th>Lightning</th><th>Mining Impact</th></tr></thead><tbody>' + rows + '</tbody></table></div>', unsafe_allow_html=True)
         st.markdown('<div class="wim-section">Hourly Operations Timeline</div>', unsafe_allow_html=True)
         render_hourly_graph(dh, tday)
-srcs = ["Open-Meteo (ECMWF)"]
-if ACCUWEATHER_KEY: srcs += ["AccuWeather", "MinuteCast (radar)"]
-if OPENWEATHER_KEY: srcs.append("OpenWeather")
+srcs = ["Open-Meteo"]
 if TOMORROWIO_KEY: srcs.append("Tomorrow.io")
+if ACCUWEATHER_KEY: srcs += ["AccuWeather", "MinuteCast"]
+if WEATHERSTACK_KEY: srcs.append("Weatherstack")
+if OPENWEATHER_KEY and OPENWEATHER_ONECALL_ENABLED: srcs.append("OpenWeather One Call")
 st.markdown(f'<p style="font-size:0.68rem;color:#94A3B8;text-align:center;padding:0.5rem 0 2rem;">Sources: {" · ".join(srcs)} • Rain confirmed across 2+ sources • © Adani Natural Resources {now_ist().year}</p>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
