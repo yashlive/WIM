@@ -2,12 +2,9 @@ name: WIM Weather Pull
 
 on:
   schedule:
-    - cron: "7,37 * * * *"
-  workflow_dispatch:
+    - cron: "*/30 * * * *"
 
-concurrency:
-  group: wim-weather-ingest
-  cancel-in-progress: false
+  workflow_dispatch:
 
 jobs:
   ingest:
