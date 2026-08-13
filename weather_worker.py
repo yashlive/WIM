@@ -152,6 +152,19 @@ def ingest_site(site, run_id):
         imd_subdivision=site.get("imd_subdivision", ""),
     )
 
+    # Never replace the last good dashboard snapshot with an empty forecast.
+    # Provider failures are expected: if one source expires, is rate-limited, or
+    # returns an error, weather_backend simply excludes it and fuses the sources
+    # that are still available. We only stop this site when *no* usable forecast
+    # data remains at all.
+    if not by_day:
+        online = [k for k, v in source_status.items() if str(v).startswith("ok")]
+        details = "; ".join(f"{k}={v}" for k, v in source_status.items())
+        raise RuntimeError(
+            "No usable numerical forecast returned; keeping previous weather_latest snapshot. "
+            f"Online/status: {', '.join(online) or 'none'}. {details}"
+        )
+
     payload = {
         "schema_version": 1,
         "site": {
