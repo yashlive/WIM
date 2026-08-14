@@ -1329,7 +1329,7 @@ def render_weekly(by_day, days, site_type="Coal Open Cast Mine"):
         d = today + timedelta(days=i)
         lbl = "Today" if i == 0 else ("Tomorrow" if i == 1 else d.strftime("%a"))
         if d not in by_day:
-            cols[i].markdown(f'<div class="wim-day"><div class="wim-day-label">{lbl}</div><div class="wim-day-date">{d.strftime("%d %b")}</div><div style="color:#94A3B8;font-size:0.75rem;margin-top:8px;">No data</div></div>', unsafe_allow_html=True)
+            cols[i].markdown(f'<div class="wim-day"><div class="wim-day-label">{lbl}</div><div class="wim-day-date">{d.strftime("%d %b")}</div><div style="color:#94A3B8;font-size:0.75rem;margin-top:8px;">Awaiting refresh</div></div>', unsafe_allow_html=True)
             continue
         s = day_summary(by_day[d], site_type, target_day=d); sl = s["slabs"]
         rain = s["total_rain"]; has_l = any(x["lightning"] for x in sl)
@@ -1556,7 +1556,7 @@ if not by_day:
     fail = {s: v for s, v in src_status.items() if v != "ok"}
     hint = ""
     if any("401" in str(v) or "Unauthorized" in str(v) for v in fail.values()):
-        hint = " One or more providers rejected authentication/quota. Check the background worker logs and provider subscription status."
+        hint = " One or more providers rejected authentication/quota. Check provider credentials, quota, and background ingestion status."
     if any("timeout" in str(v).lower() for v in fail.values()):
         hint += " Open-Meteo timeout — network issue. Try Retry."
     msg = f"Partial failure. Online: {', '.join(ok)}." if ok else "All sources unreachable."
@@ -1593,9 +1593,6 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
             is_critical_heat = "DANGEROUS HEAT INDEX" in safety or "HIGH HEAT ALERT" in safety or "HIGH HEAT" in safety
             if is_critical_heat:
                 critical_html += f'<div style="background:#FEE2E2;border:1px solid #DC2626;border-radius:6px;padding:10px 14px;margin-bottom:10px;font-size:0.85rem;color:#DC2626;font-weight:600;"><strong>CRITICAL ALERT:</strong> {safety}</div>'
-        if has_l:
-            lightning_msg = "Lightning detected in forecast. All blasting, drilling, and work near tall equipment must halt 30 minutes before the storm and resume only after 30 clear minutes."
-            critical_html += f'<div style="background:#F3E8FF;border:1px solid #7C3AED;border-radius:6px;padding:10px 14px;margin-bottom:10px;font-size:0.85rem;color:#7C3AED;font-weight:600;"><strong>LIGHTNING WARNING:</strong> {lightning_msg}</div>'
         very_heavy_rain = rain_t >= 15 and ds["max_pop"] >= 50
         if very_heavy_rain:
             rain_msg = f"Very heavy rainfall of {rain_t} mm forecast with {ds['max_pop']}% probability. Operations will be severely impacted."
@@ -1634,8 +1631,10 @@ for tab, tday in zip(st.tabs(tab_lbls), tab_days):
         fog_dew = fog_dew_prediction(dh, tday)
         if fog_dew:
             insights_html += f'<div style="background:#E0F2FE;border:1px solid #7DD3FC;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#0369A1;">{fog_dew}</div>'
+        # Surface haul-road soil alerts apply to open-cast operations only.
+        # Underground sites use the dedicated incline/shaft advisories above.
         soil = soil_moisture_forecast(sl)
-        if soil and ("SATURATED" in soil or "SOFT" in soil):
+        if "Underground" not in mine_type and soil and ("SATURATED" in soil or "SOFT" in soil):
             insights_html += f'<div style="background:#F3E8FF;border:1px solid #D8B4FE;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.8rem;color:#7E22CE;">{soil}</div>'
         if insights_html:
             st.markdown(insights_html, unsafe_allow_html=True)
